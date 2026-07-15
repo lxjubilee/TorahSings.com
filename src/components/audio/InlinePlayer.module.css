@@ -1,0 +1,51 @@
+.player {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: rgba(11, 15, 32, 0.6);
+}
+
+.mid {
+  flex: 1;
+  min-width: 0;
+}
+
+.label {
+  display: block;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.now {
+  color: var(--accent-soft);
+}
+
+.time {
+  flex: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  .player {
+    gap: 14px;
+    padding: 14px 16px;
+  }
+
+  .time {
+    display: none;
+  }
+}

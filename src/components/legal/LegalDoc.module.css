@@ -1,0 +1,164 @@
+/* ============================================================================
+   Legal document layout — a 1:1 port of jubilujah.com/terms in Torah Sings'
+   palette: a rose-bordered hero over an 880px prose column. The column stays
+   centred at 880px from desktop down to ~928px, then goes fluid; the only type
+   breakpoint is 640px (mobile), exactly like JubiLujah.
+   ========================================================================= */
+
+/* ── Hero band ──────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  padding: 64px 0 48px;
+  background:
+    radial-gradient(1200px 600px at 80% -10%, rgba(233, 69, 96, 0.18) 0, transparent 50%),
+    radial-gradient(800px 400px at 10% 110%, rgba(254, 202, 87, 0.1) 0, transparent 50%);
+  border-bottom: 3px solid var(--accent-rose);
+}
+
+/* The single content measure — hero and body share it so text lines up. */
+.container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent-rose);
+  font-weight: 600;
+}
+
+.title {
+  margin: 8px 0 14px;
+  font-family: var(--font-display), sans-serif;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--ink);
+}
+
+/* The emphasised second word — italic gold→coral gradient, JubiLujah's touch. */
+.title em {
+  font-style: italic;
+  font-weight: 500;
+  background: linear-gradient(135deg, var(--accent-peach) 0, var(--accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.lead {
+  margin: 0;
+  max-width: 880px;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--ink-body);
+}
+
+/* ── Body ───────────────────────────────────────────────────────────────── */
+.standard {
+  padding: 40px 0 56px;
+}
+
+.legal {
+  max-width: none;
+}
+
+.updated {
+  margin-bottom: 28px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Section headings, numbered like "1. Acceptance of These Terms". */
+.legal h2 {
+  margin: 38px 0 12px;
+  font-family: var(--font-display), sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+  scroll-margin-top: 90px;
+}
+
+.legal h3 {
+  margin: 22px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.legal p {
+  margin-bottom: 14px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink-body);
+}
+
+/* The opening paragraph reads a touch larger, JubiLujah's ".intro". */
+.legal p:first-of-type {
+  font-size: 16px;
+}
+
+.legal ul {
+  margin: 0 0 16px;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--ink-body);
+}
+
+.legal li {
+  margin-bottom: 8px;
+}
+
+.legal li::marker {
+  color: var(--accent);
+}
+
+.legal strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.legal a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.legal a:hover {
+  color: var(--accent-soft);
+  text-decoration: underline;
+}
+
+/* Contact card that closes the document. */
+.contact {
+  margin-top: 10px;
+  padding: 18px 22px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.contact p {
+  margin-bottom: 4px;
+}
+
+/* ── Mobile — JubiLujah's only legal breakpoint ─────────────────────────── */
+@media (max-width: 640px) {
+  .hero {
+    padding: 40px 0 32px;
+  }
+
+  .title {
+    font-size: 30px;
+  }
+
+  .lead {
+    font-size: 15px;
+  }
+}

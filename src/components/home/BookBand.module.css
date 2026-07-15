@@ -1,0 +1,48 @@
+.band {
+  display: grid;
+  grid-template-columns: 1.25fr 0.75fr;
+  gap: 64px;
+  align-items: center;
+  padding: 56px 52px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--hairline);
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgba(201, 168, 74, 0.07), transparent 60%),
+    var(--bg-panel);
+}
+
+.title {
+  margin: 20px 0 22px;
+  max-width: 20ch;
+}
+
+.copy {
+  color: var(--ink-body);
+  font-size: 1.06rem;
+  line-height: 1.72;
+  max-width: 56ch;
+  margin-bottom: 32px;
+}
+
+.actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.coverWrap {
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 900px) {
+  .band {
+    grid-template-columns: 1fr;
+    gap: 44px;
+    padding: 40px 26px;
+  }
+
+  .title {
+    max-width: none;
+  }
+}

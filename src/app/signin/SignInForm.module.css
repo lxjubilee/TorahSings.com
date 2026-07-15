@@ -1,0 +1,396 @@
+/* JubiLujah's split-screen auth, branded for Torah Sings. */
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  z-index: 101;
+  background: linear-gradient(90deg, #e8a23e, #ffd27a 50%, #e8a23e);
+}
+
+.split {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: clamp(360px, 33vw, 520px) 1fr;
+  overflow: hidden;
+  background: #292622;
+  font-family: var(--font-body), 'Open Sans', 'Segoe UI', sans-serif;
+}
+
+/* ── Left: the form panel ───────────────────────────────────────────────── */
+.panel {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 40px 44px 22px;
+  background: #292622;
+  color: #f5f3ee;
+  /* Only this panel scrolls — with a gold scrollbar, JubiLujah-style. */
+  scrollbar-width: thin;
+  scrollbar-color: #b78d4d #221f1b;
+}
+
+.panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.panel::-webkit-scrollbar-track {
+  background: #221f1b;
+  border-radius: 8px;
+}
+
+.panel::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  border: 2px solid #292622;
+  background: linear-gradient(180deg, #e8a23e, #b78d4d);
+}
+
+.panel::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ffd27a, #e8a23e);
+}
+
+.inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  padding: 18px 0;
+}
+
+.brandLink {
+  display: block;
+  text-decoration: none;
+}
+
+.avatar {
+  display: block;
+  width: 100px;
+  height: 100px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 30px -6px rgba(240, 173, 78, 0.5);
+}
+
+.brand {
+  text-align: center;
+  font-family: var(--font-cosmic), 'Segoe UI', sans-serif;
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.b1 {
+  color: #fff;
+}
+
+.b2 {
+  color: #f0ad4e;
+}
+
+.switch {
+  text-align: center;
+  font-size: 14px;
+  color: #d3cdc1;
+  margin: 10px 0 26px;
+}
+
+.switch a {
+  color: #f0ad4e;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.switch a:hover {
+  text-decoration: underline;
+}
+
+/* The in-page Sign In / Sign Up toggle, styled as a link. */
+.switchBtn {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: #f0ad4e;
+  cursor: pointer;
+}
+
+.switchBtn:hover {
+  text-decoration: underline;
+}
+
+/* Floating-label fields. */
+.field {
+  position: relative;
+  margin-bottom: 18px;
+}
+
+.field label {
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  padding: 0 6px;
+  z-index: 1;
+  background: #292622;
+  font-size: 12px;
+  color: #cbc5b8;
+}
+
+.field input {
+  width: 100%;
+  padding: 15px 44px 14px 14px;
+  border: 1.5px solid #b78d4d;
+  border-radius: 8px;
+  background: transparent;
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field input::placeholder {
+  color: #98917f;
+}
+
+.field input:focus {
+  outline: none;
+  border-color: #ffc56b;
+  box-shadow: 0 0 0 3px rgba(240, 173, 78, 0.16);
+}
+
+.eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border: none;
+  background: none;
+  color: #e0b766;
+  cursor: pointer;
+}
+
+/* Sign-up: gold the native date picker, First/Last side by side. */
+.field input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.7) sepia(1) saturate(4) hue-rotate(2deg);
+  cursor: pointer;
+}
+
+.nameRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+/* Sign-up: the terms agreement checkbox. */
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #d3cdc1;
+  cursor: pointer;
+}
+
+.check input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: #f0ad4e;
+}
+
+.check a {
+  color: #f0ad4e;
+  text-decoration: none;
+}
+
+.check a:hover {
+  text-decoration: underline;
+}
+
+.forgot {
+  text-align: right;
+  margin: -4px 0 14px;
+}
+
+.forgot a {
+  color: #f0ad4e;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.forgot a:hover {
+  text-decoration: underline;
+}
+
+.submit {
+  width: 100%;
+  margin-top: 6px;
+  padding: 15px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffd27a, #efab44);
+  box-shadow: 0 8px 20px rgba(239, 171, 68, 0.26);
+  color: #2a1c00;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.submit:hover {
+  filter: brightness(1.03);
+}
+
+.submit:active {
+  transform: translateY(1px);
+}
+
+.foot {
+  padding-top: 20px;
+  text-align: center;
+  font-size: 12px;
+  color: #8a857b;
+}
+
+/* ── Right: the celestial hero ──────────────────────────────────────────── */
+.hero {
+  position: relative;
+  overflow: hidden;
+  background-color: #1a1612;
+}
+
+/* The slideshow — cosmic album art, Ken-Burns fade + zoom. */
+.heroSlides {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.heroSlide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: 50%;
+  opacity: 0;
+  transform: scale(1.12);
+  transition: opacity 1.6s ease-in-out, transform 7s ease-out;
+  will-change: opacity, transform;
+}
+
+.heroSlideActive {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(35, 25, 8, 0.22), rgba(22, 16, 5, 0.4) 52%, rgba(12, 9, 3, 0.78));
+}
+
+.quote {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 13%;
+  z-index: 2;
+  text-align: center;
+}
+
+.quote p {
+  margin: 0 0 14px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-weight: 600;
+  color: #fff;
+  font-size: clamp(19px, 1.6vw, 28px);
+  line-height: 1.42;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
+  animation: quoteFade 0.7s ease both;
+}
+
+.quote cite {
+  font-style: normal;
+  color: #f0ad4e;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@keyframes quoteFade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Slide navigation dots — active one widens to a gold pill. */
+.heroDots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 4.5%;
+  z-index: 3;
+  display: flex;
+  gap: 9px;
+  justify-content: center;
+}
+
+.heroDot {
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: hsla(0, 0%, 100%, 0.42);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: background 0.25s ease, width 0.25s ease, border-radius 0.25s ease;
+}
+
+.heroDot:hover {
+  background: hsla(0, 0%, 100%, 0.75);
+}
+
+.heroDotActive {
+  width: 24px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #ffd27a, #e8a23e);
+}
+
+@media (max-width: 820px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+
+  .hero {
+    display: none;
+  }
+
+  .panel {
+    padding: 34px 22px 20px;
+  }
+}

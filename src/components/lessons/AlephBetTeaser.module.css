@@ -1,0 +1,57 @@
+.teaser {
+  margin-top: 44px;
+}
+
+.label {
+  margin-bottom: 20px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  max-width: 440px;
+}
+
+.tile {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: var(--bg-card);
+  font-size: 1.7rem;
+  color: var(--ink);
+  transition: border-color 0.25s var(--ease), color 0.25s var(--ease), transform 0.25s var(--ease);
+}
+
+.tile:hover {
+  border-color: var(--hairline-strong);
+  color: var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+.more {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.caption {
+  margin: 20px 0 0;
+  color: var(--ink-muted);
+  font-size: 0.96rem;
+  line-height: 1.6;
+  max-width: 44ch;
+}
+
+@media (max-width: 520px) {
+  .grid {
+    gap: 8px;
+  }
+
+  .tile {
+    font-size: 1.4rem;
+  }
+}

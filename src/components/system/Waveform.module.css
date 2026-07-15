@@ -1,0 +1,53 @@
+.wave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 34px;
+  flex: 1;
+  min-width: 0;
+}
+
+.seekable {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.seekable:focus-visible {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 4px;
+}
+
+.bar {
+  flex: 1 1 0;
+  min-width: 1.5px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.4;
+  transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
+}
+
+/* Bars behind the playhead. */
+.played {
+  opacity: 0.85;
+}
+
+/* The single tallest bar — starlight gold. */
+.peak {
+  background: var(--accent-soft);
+  opacity: 0.95;
+}
+
+/* Breathing motion while a track is actually playing. */
+.active .played {
+  animation: pulse 1.9s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.82);
+  }
+}

@@ -1,0 +1,110 @@
+.exercise {
+  padding: 22px 0;
+  border-top: 1px solid rgba(232, 217, 168, 0.07);
+}
+
+.prompt {
+  margin: 0 0 18px;
+  color: var(--ink);
+  font-size: 1.04rem;
+  line-height: 1.6;
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink-body);
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.45;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.choice:hover:not(:disabled) {
+  border-color: var(--hairline-strong);
+  background: rgba(232, 217, 168, 0.03);
+}
+
+.choice:disabled {
+  cursor: default;
+}
+
+.marker {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline-strong);
+  font-family: var(--font-mono), monospace;
+  font-size: 9.5px;
+  color: var(--ink-faint);
+}
+
+/* The one that was right. */
+.correct {
+  border-color: var(--accent);
+  background: rgba(201, 168, 74, 0.08);
+  color: var(--ink);
+}
+
+.correct .marker {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* The one they chose, when it was not right. */
+.wrong {
+  border-color: rgba(200, 90, 90, 0.4);
+  color: var(--ink-muted);
+}
+
+.wrong .marker {
+  border-color: rgba(200, 90, 90, 0.55);
+  color: rgba(214, 128, 128, 0.9);
+}
+
+.dim {
+  opacity: 0.45;
+}
+
+.note {
+  margin: 16px 0 0;
+  padding-left: 16px;
+  border-left: 2px solid var(--accent);
+  color: var(--ink-muted);
+  font-size: 0.96rem;
+  line-height: 1.65;
+}
+
+.again {
+  margin-top: 14px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-mono), monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.again:hover {
+  color: var(--accent-soft);
+}
