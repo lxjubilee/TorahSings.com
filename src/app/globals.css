@@ -70,6 +70,13 @@ html {
 body {
   margin: 0;
   min-height: 100dvh;
+  /* Column flex so the footer is pushed to the bottom on pages whose content is
+     shorter than the viewport — min-height alone stretches the body but leaves
+     the footer sitting at the end of the content, with background showing under
+     it. Only the header, main and footer are in flow; the particles, the star
+     field, the transport and the modals are all fixed or absolute. */
+  display: flex;
+  flex-direction: column;
   background-color: var(--bg-deep);
   background-image:
     radial-gradient(ellipse at top, rgba(15, 52, 96, 0.4) 0%, transparent 60%),
@@ -81,6 +88,12 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Takes up the slack between the header and the footer, so short pages still
+   plant the footer on the bottom edge. */
+main {
+  flex: 1 0 auto;
 }
 
 /* A faint scatter of stars behind everything. */

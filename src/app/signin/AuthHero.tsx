@@ -4,38 +4,39 @@ import { useEffect, useState } from 'react';
 import styles from './SignInForm.module.css';
 
 /**
- * The right-panel slideshow — rotating quotes over placeholder backgrounds.
- * Each slide's `bg` is a plain CSS background (color/gradient) for now; swap it
- * for `url('/your-image.jpg') center/cover` once you drop images in.
+ * The right-panel slideshow — rotating quotes over the images in
+ * public/images/slider, in file order (sld1 is the first slide). The stylesheet
+ * owns cover/centre and the Ken-Burns zoom, so a slide only supplies the image;
+ * `.hero::before` lays the scrim that keeps the quote readable over it.
  */
 const SLIDES = [
   {
-    bg: 'radial-gradient(120% 95% at 50% 18%, #4a3418, transparent 62%), linear-gradient(160deg, #26190d, #120b05)',
+    image: '/images/slider/sld1.webp',
     quote: 'When the morning stars sang together, and all the sons of Elohim shouted for joy.',
     cite: 'Iyob 38:7',
   },
   {
-    bg: 'radial-gradient(120% 95% at 50% 18%, #4a2130, transparent 62%), linear-gradient(160deg, #261017, #120709)',
+    image: '/images/slider/sld2.webp',
     quote: 'Holy, holy, holy is Yahuah of hosts; the whole earth is full of His glory.',
     cite: 'Yeshayahu 6:3',
   },
   {
-    bg: 'radial-gradient(120% 95% at 50% 18%, #2e2150, transparent 62%), linear-gradient(160deg, #171226, #0b0812)',
+    image: '/images/slider/sld3.webp',
     quote: 'The heavens declare the glory of El; the skies proclaim the work of His hands.',
     cite: 'Tehillim 19:1',
   },
   {
-    bg: 'radial-gradient(120% 95% at 50% 18%, #143a3a, transparent 62%), linear-gradient(160deg, #0d2124, #060f11)',
+    image: '/images/slider/sld4.webp',
     quote: 'Sing to Yahuah a new song; sing to Yahuah, all the earth.',
     cite: 'Tehillim 96:1',
   },
   {
-    bg: 'radial-gradient(120% 95% at 50% 18%, #1b2d55, transparent 62%), linear-gradient(160deg, #101a2e, #070c16)',
+    image: '/images/slider/sld5.webp',
     quote: 'He will rejoice over you with gladness, and renew you in His love with singing.',
     cite: 'Tzephanyah 3:17',
   },
   {
-    bg: 'radial-gradient(120% 95% at 50% 18%, #3d2a16, transparent 62%), linear-gradient(160deg, #1f150b, #0f0a05)',
+    image: '/images/slider/sld6.webp',
     quote: 'Let everything that has breath praise Yah. Halelu-Yah.',
     cite: 'Tehillim 150:6',
   },
@@ -59,7 +60,7 @@ export function AuthHero() {
           <div
             key={i}
             className={[styles.heroSlide, i === active ? styles.heroSlideActive : ''].filter(Boolean).join(' ')}
-            style={{ background: s.bg }}
+            style={{ backgroundImage: `url('${s.image}')` }}
           />
         ))}
       </div>

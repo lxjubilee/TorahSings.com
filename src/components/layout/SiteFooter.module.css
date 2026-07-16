@@ -1,6 +1,5 @@
 /* JubiLujah-style copyright bar: dark, centered, gold top border. */
 .footer {
-  margin-top: 64px;
   background: var(--bg-deep);
   color: var(--cream);
   border-top: 2px solid var(--accent);

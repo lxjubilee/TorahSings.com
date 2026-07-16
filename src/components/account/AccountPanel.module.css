@@ -1,64 +1,413 @@
-.grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 26px;
-  margin-top: 48px;
-  align-items: start;
+/* ============================================================================
+   The account page, ported from JubiLujah's /account.
+
+   Like JubiLujah's `.account-page`, this scopes a NEUTRAL charcoal palette over
+   the site's cosmic gradient — the account surfaces read as a settings console
+   rather than the library. The gold accent carries through, so it still reads as
+   Torah Sings.
+
+   Change-password and Danger-zone are presentation only: the markup and states
+   are final, but nothing is wired to an API yet (the Jubilee Account is still
+   the local stub). They are ready to be hooked up to torahsings-api's
+   POST /api/auth/change-password and DELETE /api/auth/account.
+   ========================================================================= */
+
+.page {
+  --surface: #161b22;
+  --surface-2: #1d242e;
+  --line: #2a323d;
+  --ink-soft: #aeb4bf;
+  --ink-dim: #79808c;
+
+  background: #0d1117;
+  min-height: 100vh;
+  padding-bottom: 72px;
 }
+
+/* JubiLujah caps the account column far narrower than the library's --wrap. */
+.shell {
+  max-width: 680px;
+  margin: 0 auto;
+  padding-inline: 20px;
+}
+
+/* ---- hero ---- */
+
+.hero {
+  padding: 48px 0 30px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid var(--line);
+  background: radial-gradient(900px 360px at 12% -30%, rgba(254, 202, 87, 0.1), transparent 60%);
+}
+
+.id {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.avatar {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 27px;
+  font-weight: 800;
+  color: #241a02;
+  background: linear-gradient(135deg, #feca57 0%, #f0a93a 100%);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.h1 {
+  margin: 4px 0 6px;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.sub {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
+.sub strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ---- cards ---- */
 
 .card {
-  padding: 32px 30px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--hairline);
-  background: var(--bg-panel);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 26px 28px;
+  margin-bottom: 22px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
-.wide {
-  grid-column: 1 / -1;
+.cardDanger {
+  border-color: rgba(192, 57, 43, 0.42);
+}
+
+.cardHead {
+  margin-bottom: 18px;
 }
 
 .cardTitle {
-  font-family: var(--font-display), serif;
-  font-size: 1.4rem;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--ink);
-  margin: 14px 0 20px;
+}
+
+.cardTitleDanger {
+  color: #e0857a;
+}
+
+.cardNote {
+  margin: 7px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+/* ---- form ---- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 4px;
 }
 
 .field {
   display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 13px 0;
-  border-bottom: 1px solid rgba(232, 217, 168, 0.06);
+  flex-direction: column;
+  gap: 6px;
 }
 
-.field:last-child {
+.field > span {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.input {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input input {
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  padding: 11px 40px 11px 14px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.input input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(254, 202, 87, 0.14);
+}
+
+/* Edge/IE render their own reveal control — ours is the only one. */
+.input input::-ms-reveal,
+.input input::-ms-clear {
+  display: none;
+}
+
+.eye {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+.eye:hover {
+  color: var(--ink);
+}
+
+.actions {
+  margin-top: 24px;
+}
+
+/* ---- inline messages ---- */
+
+.msg {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.msgOk {
+  background: rgba(31, 157, 87, 0.12);
+  border-color: rgba(31, 157, 87, 0.42);
+  color: #bfe6cf;
+}
+
+.msgErr {
+  background: rgba(192, 57, 43, 0.12);
+  border-color: rgba(192, 57, 43, 0.42);
+  color: #f0b3ab;
+}
+
+/* ---- buttons ---- */
+
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.btnPrimary {
+  background: linear-gradient(135deg, var(--accent), #ffd877);
+  color: #241a02;
+}
+
+.btnPrimary:hover:not(:disabled) {
+  filter: brightness(1.04);
+}
+
+.btnGhost {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.btnGhost:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.btnDanger {
+  background: #c0392b;
+  color: #fff;
+}
+
+.btnDanger:hover:not(:disabled) {
+  background: #a83224;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ---- danger row ---- */
+
+.danger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dangerTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.dangerNote {
+  margin: 5px 0 0;
+  max-width: 540px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+/* ---- confirm modal ---- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 9, 16, 0.72);
+}
+
+.modal {
+  width: 100%;
+  max-width: 440px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+}
+
+.modalTitle {
+  margin: 0 0 10px;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.modalBody {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.modalBody strong {
+  color: var(--ink);
+}
+
+.modalActions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* ---- key/value rows (membership card) ---- */
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.kv:last-child {
   border-bottom: 0;
 }
 
 .key {
-  font-family: var(--font-mono), monospace;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  padding-top: 3px;
+  color: var(--ink-dim);
 }
 
 .val {
-  color: var(--ink-body);
+  color: var(--ink);
   text-align: right;
 }
 
 .active {
-  color: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 
-.actions {
-  display: flex;
-  gap: 14px;
-  flex-wrap: wrap;
-  margin-top: 26px;
+/* ---- my contributions ----
+   Counters are real, not placeholders: nothing on Torah Sings can be rated or
+   reviewed yet, so zero is the true value. Wires to the ratings/reviews routers
+   (dormant today) — see docs/API.md §1. */
+
+.contribCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.contribCard {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-align: center;
+}
+
+.contribNum {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.contribLbl {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.contribSub {
+  margin: 22px 0 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.contribEmpty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-dim);
 }
 
 /* ---- resources kit ---- */
@@ -73,11 +422,16 @@
   display: flex;
   align-items: center;
   gap: 18px;
-  padding: 18px 0;
-  border-bottom: 1px solid rgba(232, 217, 168, 0.06);
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.kitRow:first-child {
+  padding-top: 0;
 }
 
 .kitRow:last-child {
+  padding-bottom: 0;
   border-bottom: 0;
 }
 
@@ -88,105 +442,105 @@
 
 .kitName {
   display: block;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--ink);
-  font-size: 1.02rem;
 }
 
 .kitNote {
   display: block;
-  margin-top: 5px;
-  color: var(--ink-muted);
-  font-size: 0.9rem;
+  margin-top: 4px;
+  font-size: 13px;
   line-height: 1.5;
+  color: var(--ink-soft);
 }
 
 .kitBtn {
   flex: none;
-  padding: 9px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--hairline-strong);
-  background: transparent;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
   color: var(--ink);
-  font-family: var(--font-mono), monospace;
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
 }
 
 .kitBtn:hover:not(:disabled) {
-  border-color: var(--accent-soft);
-  background: rgba(232, 217, 168, 0.04);
+  border-color: var(--accent);
 }
 
 .kitBtn:disabled {
+  opacity: 0.5;
   cursor: not-allowed;
-  opacity: 0.4;
-  color: var(--ink-faint);
 }
 
-/* ---- signed out ---- */
+/* ---- signed out / loading ---- */
 
 .signedOut {
-  margin-top: 48px;
+  max-width: 680px;
+  margin: 0 auto;
   padding: 56px 40px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--hairline);
-  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
   text-align: center;
 }
 
 .signedOutBody {
   margin: 16px auto 30px;
   max-width: 50ch;
-  color: var(--ink-body);
+  color: var(--ink-soft);
   line-height: 1.7;
 }
 
 .loading {
-  margin-top: 48px;
-  padding: 56px 40px;
+  padding: 80px 40px;
   text-align: center;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   font-style: italic;
 }
 
 /* ---- stub notice ---- */
 
 .stub {
-  margin-top: 40px;
+  margin-top: 8px;
   padding: 18px 22px;
-  border-radius: var(--radius);
-  border: 1px dashed var(--hairline-strong);
-  background: rgba(201, 168, 74, 0.04);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  background: rgba(254, 202, 87, 0.04);
 }
 
 .stubBody {
   margin: 8px 0 0;
-  color: var(--ink-muted);
-  font-size: 0.92rem;
-  line-height: 1.62;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
 }
 
-.link {
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  font-family: var(--font-mono), monospace;
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+.stubBody code {
+  color: var(--accent);
 }
 
-.link:hover {
-  color: var(--accent-soft);
-}
+@media (max-width: 640px) {
+  .card {
+    padding: 22px 18px;
+  }
 
-@media (max-width: 880px) {
-  .grid {
-    grid-template-columns: 1fr;
+  .h1 {
+    font-size: 27px;
+  }
+
+  .id {
+    gap: 14px;
+  }
+
+  .avatar {
+    width: 52px;
+    height: 52px;
+    font-size: 22px;
   }
 }

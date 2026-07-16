@@ -1,4 +1,3 @@
-import { BookBand } from '@/components/home/BookBand';
 import { CatalogHero } from '@/components/home/CatalogHero';
 import { CategoryRail } from '@/components/home/CategoryRail';
 import { HoverPreviewProvider } from '@/components/home/HoverPreview';
@@ -23,8 +22,6 @@ export default function HomePage() {
           ))}
         </div>
       </HoverPreviewProvider>
-
-      <BookBand />
     </>
   );
 }

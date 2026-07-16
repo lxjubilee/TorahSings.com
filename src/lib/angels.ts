@@ -43,9 +43,20 @@ export interface CatalogCategory {
   albums: CatalogAlbum[];
 }
 
-/** Turn a drive-relative path into a URL the `/media` route handler serves. */
+/**
+ * Base for streamed media. In production this is set to the R2 CDN prefix
+ * (e.g. `https://cdn.jubileeverse.com/torahsings`), so audio is served straight
+ * from object storage. Left empty in local dev, where the `/media/[...]` route
+ * streams the masters off the `J:\music\angels` drive instead. Trailing slashes
+ * are trimmed so we control the join.
+ */
+const MEDIA_BASE = (process.env.NEXT_PUBLIC_MEDIA_BASE || '').replace(/\/+$/, '');
+
+/** Turn a drive-relative path into a media URL: the R2 CDN in production, the
+ *  local `/media` route handler in dev. */
 export function mediaUrl(rel: string): string {
-  return '/media/' + rel.split('/').map(encodeURIComponent).join('/');
+  const encoded = rel.split('/').map(encodeURIComponent).join('/');
+  return MEDIA_BASE ? `${MEDIA_BASE}/${encoded}` : `/media/${encoded}`;
 }
 
 /** Every rendered song of an album, as a queue the audio engine can play. */
