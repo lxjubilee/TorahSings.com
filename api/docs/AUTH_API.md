@@ -1,5 +1,31 @@
 # Jubilujah Authentication API
 
+> # ⛔ OUT OF DATE — DO NOT BUILD AGAINST THIS FILE
+>
+> **The `jv_session` cookie + `X-CSRF-Token` double-submit model described below is no
+> longer how the live API works.** The live code is **stateless Bearer tokens** — no
+> cookies, no CSRF, no `X-CSRF-Token`, `credentials: 'omit'`.
+>
+> **👉 The authoritative reference is [`docs/AUTH_API.md`](../../docs/AUTH_API.md)** (repo
+> root). Use that one.
+>
+> **Verified 2026-07-16** against the live host this file names (`api.jubilujah.com`):
+> - `POST /api/auth/signup` with **no** `X-CSRF-Token` and **no** cookie returns
+>   **`400` validation** — *not* the `403 CSRF token missing or invalid` §1 promises.
+>   If the CSRF guard were in force, that request could not reach validation.
+> - `GET /api/auth/me` sets **no** `Set-Cookie` — neither `jv_session` nor `jv_csrf`
+>   is issued, so the "cookie carrier" of §1 does not exist.
+>
+> What *is* still accurate here: the **endpoint paths**, the **two-phase email-verified
+> sign-up shape** (`/signup` → code → `/verify-signup`), the **field names and validation
+> rules**, the **status codes**, the **error/`issues[]` shape**, and the timings (30-min
+> code, 5 attempts, 60-s resend cooldown, 50 req/15 min). The **auth/session/CSRF model**
+> is what changed — and §9's cookie-jar curl examples and `credentials: 'include'` fetch
+> snippets will **not** work.
+>
+> Kept for the server-to-server sections (§11–§12), which are unaffected by the carrier
+> change, and as the historical record.
+
 Reference for the account flows exposed by the Jubilujah identity API:
 **sign up, sign in, forgot password, reset password, change password, and delete account.**
 

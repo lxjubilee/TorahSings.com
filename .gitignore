@@ -43,3 +43,7 @@ yarn-error.log*
 # IDE / editor
 .idea/
 *.swp
+
+# Local dev auth database (scripts/local-auth-server.mjs) — never commit accounts.
+.local-auth.db
+.local-auth.db-*

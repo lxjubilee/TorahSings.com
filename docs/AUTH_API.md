@@ -8,9 +8,29 @@ service (`torahsings-api`), a replica of the Jubilujah identity API backed by th
 - **Router prefix:** `/api/auth` (admin surface: `/api/admin`)
 - **Source of truth:** `api/src/routes/auth.js`, `api/src/routes/admin.js`
 
-> ⚠️ **Status:** the `torahsings` database exists and the service is built, but the API is
-> **not deployed yet** (awaiting go-ahead). The identical endpoints are live today on
-> `https://api.jubilujah.com`. Substitute that host to test the contracts now.
+> ✅ **Status (verified 2026-07-16): DEPLOYED AND LIVE on `https://api.torahsings.com`.**
+> This supersedes the earlier "not deployed yet (awaiting go-ahead)" note, which was stale.
+> Confirmed by read-only probes: `GET /api/auth/me` → `200 {"authenticated":false}`, and
+> `signup` · `verify-signup` · `send-signup-verification` · `signin` · `forgot-password` ·
+> `refresh` all answer with the documented validation contract (`400` + `issues[]`). The
+> `50 req / 15 min / IP` limiter is active — responses carry `Ratelimit-Policy: 50;w=900`.
+>
+> **Not verified** (and so not claimed here): outbound email delivery, end-to-end account
+> creation against production, the `AUTH_LOGIN_MODE` in force there, and the `/api/admin`
+> surface. The identical endpoints also remain live on `https://api.jubilujah.com`.
+>
+> ⚠️ **Because it is live, `NEXT_PUBLIC_API_BASE=https://api.torahsings.com` means dev
+> writes to production** — a sign-up from localhost creates a real pending row and sends a
+> real email. Use the local server below unless you mean to hit prod.
+
+> 🧪 **Local, no-Postgres dev:** `npm run dev:auth` starts `scripts/local-auth-server.mjs`
+> on **`http://localhost:4031`** — the full sign-up flow (request code → verify → account
+> created → signed in) against a SQLite file (`.local-auth.db`, gitignored), with the
+> 6-digit code **printed to that console** instead of emailed. It imports the real scrypt
+> KDF from `api/src/auth/password.js` and mirrors `api/src/auth/token.js`'s exact token
+> format, and its contracts were checked byte-for-byte against the live endpoints. Point
+> the web at it with `NEXT_PUBLIC_API_BASE=http://localhost:4031` in `.env.local`.
+> Dev-only: no rate limiting, no 2FA/Turnstile, no JI delegation, no password reset.
 
 > ⚠️ The older `AUTH_API.md` in the Jubilujah repo describes a `jv_session` **cookie +
 > CSRF** model. That is **out of date.** The live code is **stateless Bearer tokens** — no
@@ -245,8 +265,27 @@ Payload carries `type`, `exp` (ms epoch), `iat` (ms epoch), `jti`. Don't feed it
 - `503 Service token issuance is not configured.` — `SERVICE_JWT_SECRET` unset (fails closed).
 
 Then call an admin route with `Authorization: Bearer <access_token>`:
-`POST /api/auth/admin/set-password` (`admin.set_password`) · `POST /api/auth/admin/provision-user` (`admin.provision`).
+`POST /api/auth/admin/set-password` (`admin.set_password`) · `POST /api/auth/admin/provision-user` (`admin.provision`) · `GET /api/auth/admin/check-email` (`admin.check_email`).
 Clients are registered via the `SERVICE_CLIENTS` env (`id:secret:scopeA|scopeB`, comma-separated).
+
+### 5.3 `GET /api/auth/admin/check-email?email=<email>` — does an account exist?
+
+For a partner service deciding between `provision-user` (new) and `set-password` (existing) before it writes. Read-only; scope `admin.check_email`. Email is trimmed + lower-cased, so lookup is case-insensitive.
+
+**200 OK** — found:
+```json
+{ "email": "a@b.com", "exists": true,
+  "user": { "id": "<uuid>", "email": "a@b.com", "displayName": "A B",
+            "active": true, "emailVerified": true, "roles": ["content_editor"],
+            "createdAt": "2026-07-17T07:13:40.971Z" } }
+```
+**200 OK** — not found: `{ "email": "a@b.com", "exists": false }`
+
+- `exists` tracks the row; **`active` is reported separately** — a deactivated account still owns the email, so `exists: true, active: false` means *do not provision*, it is not a free address.
+- Only **verified** accounts count: a pending sign-up (code not yet entered) has no `identity.users` row, so it reports `exists: false`. That matches `POST /signup`, which also tests only `users` — it does *not* 409 a pending sign-up, it drops the old pending row and issues a fresh code.
+- `400` + `issues[]` on a missing/invalid email · `401` on a missing/bad service token.
+
+> **Never expose this to the browser.** Unauthenticated, it is an account-enumeration oracle — anyone could test which emails have accounts here. It is service-only for that reason; `POST /signup`'s 409 remains the sole public answer, and it costs an attacker a real sign-up attempt (rate-limited) per guess.
 
 ---
 

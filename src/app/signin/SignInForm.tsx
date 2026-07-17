@@ -11,6 +11,25 @@ import styles from './SignInForm.module.css';
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
 
 /**
+ * Youngest permitted account holder. The identity schema stores no date of
+ * birth (docs/AUTH_API.md §1.1 takes only name/email/password), so this is a
+ * CLIENT-SIDE gate only — it mirrors the ≥13 rule the admin provision route
+ * enforces server-side. The date itself is never sent.
+ */
+const MIN_AGE = 13;
+
+/** Whole years from an ISO `yyyy-mm-dd` date to today; NaN when unparseable. */
+function ageFromDob(iso: string): number {
+  const d = new Date(`${iso}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return NaN;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age -= 1;
+  return age;
+}
+
+/**
  * POST /api/auth/signin answers one of two ways (docs/API.md §7.2): a session,
  * or a 2FA challenge to complete. In `ji` mode the verdict comes from
  * JubileeInspire and torahsings-api relays it.
@@ -20,6 +39,19 @@ interface SignInResponse {
   requires2FA?: boolean;
   verificationGuid?: string;
   user?: { id: string; email: string; displayName?: string };
+}
+
+/**
+ * POST /api/auth/signup is phase 1 of a two-phase, email-verified flow
+ * (docs/AUTH_API.md §1.1): NO account is created here. The API stores a pending
+ * sign-up, emails a 6-digit code, and returns the guid identifying it. Phase 2
+ * (/verify-signup) creates the account and returns the token pair.
+ */
+interface SignUpResponse {
+  success?: boolean;
+  requiresVerification?: boolean;
+  email?: string;
+  verificationGuid?: string;
 }
 
 interface ResendResponse {
@@ -56,8 +88,15 @@ function Eye({ open }: { open: boolean }) {
  * Jubilee Account — real SSO when it is wired, the local stub otherwise — then
  * drops the visitor at their account.
  */
-export function SignInForm() {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' | 'signup' } = {}) {
+  // Which pane this route shows. /signin and /signup are both real, linkable
+  // URLs (as on JubiLujah), and the toggle between them NAVIGATES rather than
+  // flipping local state — so the address bar always matches the visible pane,
+  // Back works, and either pane can be linked to or bookmarked. The route is the
+  // single source of truth; there is no mode state that can drift out of sync
+  // with the URL. Navigating remounts this component, which also clears any
+  // in-flight verification step for free.
+  const isSignup = initialMode === 'signup';
   const [showPw, setShowPw] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -69,6 +108,14 @@ export function SignInForm() {
   // alongside the code).
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Sign-up-only fields. The API takes a single `name` (1–120 chars), so first
+  // and last are folded together on submit. `dob` never leaves the browser — it
+  // only feeds the MIN_AGE gate above.
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [dob, setDob] = useState('');
+  const [confirm, setConfirm] = useState('');
 
   // Step 2 (2FA) state.
   const [step, setStep] = useState<'password' | 'code'>('password');
@@ -85,8 +132,6 @@ export function SignInForm() {
     const t = setInterval(() => setCooldown((c) => (c <= 1 ? 0 : c - 1)), 1000);
     return () => clearInterval(t);
   }, [cooldown]);
-
-  const isSignup = mode === 'signup';
 
   // ---- Cloudflare Turnstile ------------------------------------------------
   // The widget's smallest size is a fixed 300x65 box. To keep it exactly as wide
@@ -239,10 +284,123 @@ export function SignInForm() {
     }
   }
 
-  /** Sign-up is not wired to the API yet — see the note at the top of the file. */
-  function submitSignup(e: React.FormEvent) {
+  /**
+   * Sign-up step 1 — POST /api/auth/signup (docs/AUTH_API.md §1.1).
+   *
+   * No account is created here. The API stashes the details behind a 6-digit
+   * code and emails it, so an unverified address never yields an account; we
+   * move to the shared code step, which in this mode redeems at
+   * /verify-signup.
+   *
+   * `rememberMe` is NOT accepted at phase 1 — it is held in component state and
+   * sent at phase 2, where it maps to the extended (1-year) refresh lifetime.
+   *
+   * Confirm-password and the age gate are enforced here only; neither is part of
+   * the API contract.
+   */
+  async function submitSignup(e: React.FormEvent) {
     e.preventDefault();
-    setErr('Creating an account here is not connected yet. Please sign in with your Jubilee Account.');
+    setErr(null);
+    setInfo(null);
+
+    if (password !== confirm) {
+      setErr('Those passwords do not match.');
+      return;
+    }
+    if (password.length < 8) {
+      setErr('Please choose a password of at least 8 characters.');
+      return;
+    }
+    const age = ageFromDob(dob);
+    if (Number.isNaN(age)) {
+      setErr('Please enter your date of birth.');
+      return;
+    }
+    if (age < MIN_AGE) {
+      setErr(`You must be at least ${MIN_AGE} years old to create an account.`);
+      return;
+    }
+
+    // The API takes one `name` field; fold first + last into it.
+    const name = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+    setBusy(true);
+    try {
+      const res = await api.post<SignUpResponse>('/api/auth/signup', { name, email, password });
+      setGuid(res?.verificationGuid ?? '');
+      setCode('');
+      setStep('code');
+      setCooldown(60);
+      setInfo('We emailed you a 6-digit code. Enter it below to finish creating your account.');
+      setBusy(false);
+    } catch (e) {
+      // 409 = an active account already owns this email → point them at sign-in.
+      setErr(e instanceof ApiError ? e.message : 'Could not reach the server. Please try again.');
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Sign-up step 2 — POST /api/auth/verify-signup (docs/AUTH_API.md §1.2).
+   * On 201 the account exists and the response carries the token pair, so the
+   * visitor is signed in immediately — no second trip through /signin.
+   */
+  async function submitSignupCode(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      const res = await api.post<SignInResponse>('/api/auth/verify-signup', {
+        verificationGuid: guid,
+        verificationCode: code,
+        rememberMe,
+      });
+      setTokens(res?.tokens);
+      window.location.assign(returnTo);
+    } catch (e) {
+      // 429 (attempts spent) and 409 (email claimed meanwhile) both kill this
+      // pending sign-up — send them back to the form rather than let them retype
+      // a code that can never work. A wrong code (400) keeps them here; the
+      // message carries `attemptsRemaining`.
+      if (e instanceof ApiError && (e.status === 429 || e.status === 409)) {
+        setStep('password');
+        setGuid('');
+        setCode('');
+      }
+      setErr(e instanceof ApiError ? e.message : 'Could not verify the code.');
+      setBusy(false);
+    }
+  }
+
+  /** Ask for a fresh sign-up code — 60s cooldown, 2 resends (3 codes total). */
+  async function resendSignup() {
+    if (cooldown > 0) return;
+    setErr(null);
+    setInfo(null);
+    try {
+      const res = await api.post<ResendResponse>('/api/auth/send-signup-verification', {
+        verificationGuid: guid,
+      });
+      setCooldown(60);
+      const left =
+        typeof res?.resendsRemaining === 'number'
+          ? ` (${res.resendsRemaining} resend${res.resendsRemaining === 1 ? '' : 's'} left)`
+          : '';
+      setInfo(`A new code is on its way${left}.`);
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 429 && typeof e.body?.cooldownSeconds === 'number') {
+          setCooldown(e.body.cooldownSeconds as number);
+        } else if (e.body?.exhausted) {
+          // Resend cap hit — this pending sign-up is spent; start over.
+          setStep('password');
+          setGuid('');
+          setCode('');
+        }
+      }
+      setErr(e instanceof ApiError ? e.message : 'Could not resend the code.');
+    }
   }
 
   // Lock the page behind the fixed overlay so the only scroll is the left
@@ -283,16 +441,16 @@ export function SignInForm() {
               {isSignup ? (
                 <>
                   Already have an account?{' '}
-                  <button type="button" className={styles.switchBtn} onClick={() => setMode('signin')}>
+                  <Link href="/signin" className={styles.switchBtn}>
                     Sign In
-                  </button>
+                  </Link>
                 </>
               ) : (
                 <>
                   Don&rsquo;t have an account?{' '}
-                  <button type="button" className={styles.switchBtn} onClick={() => setMode('signup')}>
+                  <Link href="/signup" className={styles.switchBtn}>
                     Sign Up
-                  </button>
+                  </Link>
                 </>
               )}
             </p>
@@ -307,7 +465,7 @@ export function SignInForm() {
 
             {/* ---- Step 2: the 6-digit code JubileeInspire emailed ---- */}
             {step === 'code' ? (
-              <form onSubmit={submitCode}>
+              <form onSubmit={isSignup ? submitSignupCode : submitCode}>
                 <div className={styles.field}>
                   <label htmlFor="code">6-digit code</label>
                   <input
@@ -327,14 +485,14 @@ export function SignInForm() {
                   className={styles.submit}
                   disabled={busy || locked || code.length !== 6}
                 >
-                  {busy ? 'Verifying…' : 'Verify & sign in'}
+                  {busy ? 'Verifying…' : isSignup ? 'Verify & create account' : 'Verify & sign in'}
                 </button>
 
                 <div className={styles.codeActions}>
                   <button
                     type="button"
                     className={styles.linkBtn}
-                    onClick={resend}
+                    onClick={isSignup ? resendSignup : resend}
                     disabled={cooldown > 0 || locked}
                   >
                     {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
@@ -345,13 +503,14 @@ export function SignInForm() {
                     onClick={() => {
                       setStep('password');
                       setCode('');
+                      setGuid('');
                       setErr(null);
                       setInfo(null);
                       setLocked(false);
                       resetTurnstile();
                     }}
                   >
-                    Use a different account
+                    {isSignup ? 'Start over' : 'Use a different account'}
                   </button>
                 </div>
               </form>
@@ -361,11 +520,27 @@ export function SignInForm() {
                 <div className={styles.nameRow}>
                   <div className={styles.field}>
                     <label htmlFor="firstName">First Name</label>
-                    <input id="firstName" name="firstName" type="text" required autoComplete="given-name" />
+                    <input
+                      id="firstName"
+                      name="firstName"
+                      type="text"
+                      required
+                      autoComplete="given-name"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                    />
                   </div>
                   <div className={styles.field}>
                     <label htmlFor="lastName">Last Name</label>
-                    <input id="lastName" name="lastName" type="text" required autoComplete="family-name" />
+                    <input
+                      id="lastName"
+                      name="lastName"
+                      type="text"
+                      required
+                      autoComplete="family-name"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                    />
                   </div>
                 </div>
               )}
@@ -387,7 +562,15 @@ export function SignInForm() {
               {isSignup && (
                 <div className={styles.field}>
                   <label htmlFor="dob">Date of Birth</label>
-                  <input id="dob" name="dob" type="date" required autoComplete="bday" />
+                  <input
+                    id="dob"
+                    name="dob"
+                    type="date"
+                    required
+                    autoComplete="bday"
+                    value={dob}
+                    onChange={(e) => setDob(e.target.value)}
+                  />
                 </div>
               )}
 
@@ -423,6 +606,8 @@ export function SignInForm() {
                     required
                     placeholder="••••••••"
                     autoComplete="new-password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
                   />
                   <button
                     type="button"
@@ -436,13 +621,25 @@ export function SignInForm() {
               )}
 
               {isSignup ? (
-                <label className={styles.check}>
-                  <input type="checkbox" required />
-                  <span>
-                    I agree to the <Link href="/membership">Terms of Use</Link> and{' '}
-                    <Link href="/membership">Privacy Policy</Link>.
-                  </span>
-                </label>
+                <>
+                  {/* Carried in state and sent at /verify-signup (phase 2) — the
+                      signup endpoint itself does not accept it. */}
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                    />
+                    <span>Keep me signed in on this device</span>
+                  </label>
+                  <label className={styles.check}>
+                    <input type="checkbox" required />
+                    <span>
+                      I agree to the <Link href="/terms">Terms of Use</Link> and{' '}
+                      <Link href="/privacy">Privacy Policy</Link>.
+                    </span>
+                  </label>
+                </>
               ) : (
                 <>
                   <div className={styles.forgot}>

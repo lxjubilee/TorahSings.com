@@ -39,12 +39,17 @@ export const config = {
   // Gated on an explicit env var (not NODE_ENV) so each mode is testable anywhere.
   loginMode: (process.env.AUTH_LOGIN_MODE || 'local').toLowerCase() === 'ji' ? 'ji' : 'local',
 
-  databaseUrl: required('DATABASE_URL', 'postgres://jubilee:jubilee_dev_pw@localhost:5432/jubilujah'),
+  // No fallback on purpose: a missing DATABASE_URL must fail loudly at boot
+  // rather than silently connect somewhere unintended.
+  databaseUrl: required('DATABASE_URL'),
 
   corsOrigins: (process.env.CORS_ORIGIN || 'http://localhost:3000')
     .split(',').map((s) => s.trim()).filter(Boolean),
 
-  sessionSecret: required('SESSION_SECRET', 'dev-only-change-me-please-32-bytes-min'),
+  // No fallback, same reasoning as DATABASE_URL. A default secret written in
+  // source is a PUBLIC secret: with it, anyone holding this repo could forge a
+  // token for any account. Unset must fail at boot, never sign silently.
+  sessionSecret: required('SESSION_SECRET'),
   // Refresh-token lifetime (days) for the DB-backed refresh token row.
   refreshTtlDays: Number(process.env.REFRESH_TTL_DAYS || 30),
 
@@ -55,7 +60,9 @@ export const config = {
   // SESSION_SECRET in dev) so the whole SSO ecosystem shares one token scheme. See
   // auth/token.js. Durable revocation is via the DB-backed refresh token.
   token: {
-    secret: process.env.JWT_SECRET || process.env.SESSION_SECRET || 'dev-only-change-me-please-32-bytes-min',
+    // Falls back to sessionSecret (itself required above) — so this is always a
+    // real configured secret, never a literal from source.
+    secret: process.env.JWT_SECRET || required('SESSION_SECRET'),
     accessTtlMs: Number(process.env.ACCESS_TOKEN_TTL_MS || 60 * 60 * 1000),               // 1h (JI default)
     refreshTtlMs: Number(process.env.REFRESH_TOKEN_TTL_MS || 30 * 24 * 60 * 60 * 1000),    // 30d
     extendedRefreshTtlMs: Number(process.env.EXTENDED_REFRESH_TTL_MS || 365 * 24 * 60 * 60 * 1000), // 1y ("keep me signed in")

@@ -265,4 +265,50 @@ router.post('/provision-user', requireServiceAuth, requireServiceScope('admin.pr
   res.status(201).json(body);
 }));
 
+// ---- GET /api/auth/admin/check-email ---------------------------------------
+// Does an account exist for this email? For a trusted partner service deciding
+// between provision-user (new) and set-password (existing) before it writes.
+//
+// Deliberately NOT exposed to the browser: an unauthenticated existence oracle
+// lets anyone enumerate which emails hold accounts. It lives in the service
+// namespace behind requireServiceAuth + its own scope for that reason, and the
+// signup route stays the only public answer (409 on a real attempt).
+//
+// Read-only: no audit row, no idempotency key (nothing to replay).
+const checkEmailSchema = z.object({
+  email: z.string().trim().email().max(254),
+});
+router.get('/check-email', requireServiceAuth, requireServiceScope('admin.check_email'), validate(checkEmailSchema, 'query'), ah(async (req, res) => {
+  const email = req.query.email.toLowerCase();
+
+  const r = await query(
+    `SELECT u.id, u.email, u.display_name, u.is_active, u.first_signin_completed, u.created_at,
+            COALESCE(array_agg(ur.role ORDER BY ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
+       FROM identity.users u
+       LEFT JOIN identity.user_roles ur ON ur.user_id = u.id
+      WHERE lower(u.email) = $1
+      GROUP BY u.id`,
+    [email]
+  );
+
+  if (!r.rowCount) return res.json({ email, exists: false });
+
+  // `exists` tracks the row; `active` is reported separately so a caller can tell
+  // a deactivated account (email is taken — do not provision) from a free email.
+  const u = r.rows[0];
+  res.json({
+    email,
+    exists: true,
+    user: {
+      id: u.id,
+      email: u.email,
+      displayName: u.display_name,
+      active: u.is_active,
+      emailVerified: u.first_signin_completed,
+      roles: u.roles,
+      createdAt: u.created_at,
+    },
+  });
+}));
+
 export default router;

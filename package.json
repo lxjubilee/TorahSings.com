@@ -4,7 +4,9 @@
   "private": true,
   "description": "Torah Sings — one platform, three pathways, one price, endless discovery.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "next dev",
+    "dev:auth": "node scripts/local-auth-server.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -16,7 +18,8 @@
   "dependencies": {
     "next": "^16.2.10",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",

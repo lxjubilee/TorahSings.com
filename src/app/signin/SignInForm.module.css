@@ -115,6 +115,9 @@
 }
 
 /* The in-page Sign In / Sign Up toggle, styled as a link. */
+/* Now an <a> (it navigates /signin <-> /signup) rather than a <button>, so the
+   UA's default link underline has to be turned off to keep the original look —
+   underline stays a hover affordance only. */
 .switchBtn {
   padding: 0;
   border: none;
@@ -123,6 +126,7 @@
   font-weight: 700;
   color: #f0ad4e;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .switchBtn:hover {
