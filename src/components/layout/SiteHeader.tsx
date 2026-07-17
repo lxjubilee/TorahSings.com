@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import styles from './SiteHeader.module.css';
 
@@ -30,7 +30,7 @@ function isActive(pathname: string, href: string): boolean {
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const { session, status } = useJubileeAccount();
+  const { session, status, signOut } = useJubileeAccount();
   const [query, setQuery] = useState('');
 
   const signedIn = status === 'ready' && session !== null;
@@ -94,10 +94,8 @@ export function SiteHeader() {
               </button>
             </form>
 
-            {signedIn ? (
-              <Link href="/account" className={styles.signin}>
-                Account
-              </Link>
+            {signedIn && session ? (
+              <AccountMenu name={session.displayName} email={session.email} onSignOut={signOut} />
             ) : (
               <Link href="/signin" className={styles.signin}>
                 Sign in
@@ -123,5 +121,81 @@ export function SiteHeader() {
         </nav>
       </div>
     </header>
+  );
+}
+
+/**
+ * Signed-in account control, JubiLujah-style: the initial in a gold disc, which
+ * opens a dropdown card of account destinations.
+ *
+ * Only routes that exist here are listed. JubiLujah's menu also carries Liked
+ * albums / Admin console / Review moderation; TorahSings has no such pages yet,
+ * and linking to a 404 is worse than omitting the row. Add them here (behind a
+ * role check, for the two admin ones) when those routes land.
+ */
+function AccountMenu({ name, email, onSignOut }: { name: string; email: string; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const initial = (name || email || '?').trim().charAt(0).toUpperCase();
+
+  // Dismiss on outside click or Escape — bound only while open.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className={styles.account} ref={ref}>
+      <button
+        type="button"
+        className={styles.avatarBtn}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={open ? 'Close account menu' : 'Open account menu'}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {initial}
+      </button>
+
+      {open && (
+        <div className={styles.menu} role="menu">
+          <div className={styles.menuHead}>
+            <div className={styles.menuName}>{name}</div>
+            <div className={styles.menuEmail}>{email}</div>
+          </div>
+
+          <div className={styles.menuList}>
+            <Link href="/account" className={styles.menuItem} role="menuitem" onClick={() => setOpen(false)}>
+              Account
+            </Link>
+            <Link href="/membership" className={styles.menuItem} role="menuitem" onClick={() => setOpen(false)}>
+              My subscription
+            </Link>
+            <button
+              type="button"
+              className={`${styles.menuItem} ${styles.menuSignout}`}
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onSignOut();
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

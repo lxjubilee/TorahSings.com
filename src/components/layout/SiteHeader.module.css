@@ -142,6 +142,115 @@
   color: #fff;
 }
 
+/* ── Signed-in account: gold initial disc + dropdown card ──────────────── */
+.account {
+  position: relative;
+  flex: none;
+}
+
+/* The initial in a gold disc, sized to match the brand badge. */
+.avatarBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #e6ac00;
+  color: #1b1b1b;
+  font-family: var(--font-body), sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+
+.avatarBtn:hover {
+  background: #f5c518;
+}
+
+.avatarBtn[aria-expanded='true'] {
+  box-shadow: 0 0 0 3px hsla(45, 100%, 45%, 0.3);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 50;
+  width: 244px;
+  border: 1px solid hsla(0, 0%, 100%, 0.1);
+  border-radius: 8px;
+  background: #2b2b2b;
+  box-shadow: 0 12px 32px hsla(0, 0%, 0%, 0.5);
+  overflow: hidden;
+}
+
+.menuHead {
+  padding: 13px 16px;
+  border-bottom: 1px solid hsla(0, 0%, 100%, 0.08);
+}
+
+/* Name and email can be arbitrarily long — clip rather than widen the card. */
+.menuName,
+.menuEmail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-body), sans-serif;
+}
+
+.menuName {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.menuEmail {
+  margin-top: 2px;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.menuList {
+  padding: 6px 0;
+}
+
+.menuItem {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: #d6d6d6;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.menuItem:hover {
+  background: #383838;
+  color: #fff;
+}
+
+.menuSignout {
+  margin-top: 6px;
+  border-top: 1px solid hsla(0, 0%, 100%, 0.08);
+  color: #e59a9a;
+}
+
+.menuSignout:hover {
+  background: #3a2b2b;
+  color: #ff9b9b;
+}
+
 /* ── Row 2 — nav bar: one line that scrolls sideways, never wraps ───────── */
 .navbar {
   background: #1b1b1b;
