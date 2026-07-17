@@ -1,6 +1,7 @@
 'use client';
 
 import { StarRating } from '@/components/system/StarRating';
+import type { ReviewSummary } from '@/lib/reviews';
 import styles from './SongRating.module.css';
 
 /**
@@ -9,20 +10,11 @@ import styles from './SongRating.module.css';
  * affordance. It renders inside a clickable track row, so the container stops
  * click propagation — otherwise rating a song would start playing it.
  *
- * `summary` mirrors the API's ReviewSummary shape (see docs/API.md §7), so when
- * the reviews router comes up this component needs no change — only its caller
- * swaps a local summary for GET /api/reviews/song/:id/summary.
+ * The summary comes straight from production.review_summaries via
+ * POST /api/reviews/summaries, batched for the whole album by the caller.
  */
-export interface SongSummary {
-  /** Aggregate average across all raters, or null when nobody has rated. */
-  average: number | null;
-  rating_count: number;
-  /** The caller's own stars, or null. */
-  mine: number | null;
-}
-
 interface Props {
-  summary: SongSummary | null;
+  summary: ReviewSummary | null;
   onRate: () => void;
 }
 

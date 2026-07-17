@@ -410,6 +410,62 @@
   color: var(--ink-dim);
 }
 
+/* ---- the caller's own reviews (GET /api/reviews/me/reviews) ---- */
+.reviewList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.reviewRow {
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--surface-2, transparent);
+}
+
+.reviewMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reviewStars {
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.reviewStarsOff {
+  color: var(--hairline-strong);
+}
+
+.reviewTarget {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+
+.reviewDate {
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.reviewBody {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
 /* ---- resources kit ---- */
 
 .kit {

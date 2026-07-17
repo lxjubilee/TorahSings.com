@@ -39,14 +39,30 @@
 
 .interactive {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 2px;
+  /* The picker draws its own stars; drop the display-mode letter-spacing that
+     would otherwise offset the last glyph. */
+  letter-spacing: 0;
 }
 
 .starBtn {
-  padding: 0 1px;
+  /* Centre the glyph in its own box, so all five sit on one baseline
+     regardless of the font's star metrics. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15em;
+  height: 1.15em;
+  padding: 0;
   border: 0;
   background: none;
   color: var(--hairline-strong);
+  /* A <button> does NOT inherit font-family — without this the star renders in
+     the UA's default button font while .bg/.fill use Arial, so the picker and
+     the display row disagree and the glyphs sit unevenly. */
+  font-family: inherit;
   font-size: inherit;
   line-height: 1;
   cursor: pointer;

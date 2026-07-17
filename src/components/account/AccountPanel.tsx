@@ -1,10 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ALEPH_BET, MODES, degreeOf } from '@/lib/derivation';
 import { YEARLY_PRICE_LABEL } from '@/lib/format';
 import { useJubileeAccount } from '@/lib/jubilee-account';
+import {
+  getContributions,
+  getMyReviews,
+  type Contributions,
+  type MyReview,
+  type TargetType,
+} from '@/lib/reviews';
 import styles from './AccountPanel.module.css';
 
 /**
@@ -28,20 +35,19 @@ import styles from './AccountPanel.module.css';
 const PENDING_NOTICE = 'Not connected yet — this will work once your Jubilee Account is wired to the identity service.';
 
 /**
- * The contribution counters. These are NOT placeholder numbers — nothing in the
- * library can be rated or reviewed yet, so zero is the true count for everyone.
- * When the ratings/reviews routers come up, replace this constant with the
- * GET /api/reviews contributions payload; the labels already match its fields
- * (albums_rated, songs_rated, reviews_written, helpful_received,
- * total_contributions), and the reviews list below takes GET /api/reviews/mine.
+ * The contribution counters, in display order. Values come from
+ * GET /api/reviews/me/contributions (see lib/reviews.ts) — the labels map 1:1
+ * onto its fields, so rating an album or song is reflected here on next load.
  */
-const CONTRIBUTIONS: Array<{ label: string; value: number }> = [
-  { label: 'Albums rated', value: 0 },
-  { label: 'Songs rated', value: 0 },
-  { label: 'Reviews written', value: 0 },
-  { label: 'Helpful votes received', value: 0 },
-  { label: 'Total contributions', value: 0 },
+const CONTRIB_ROWS: Array<{ label: string; key: keyof Contributions }> = [
+  { label: 'Albums rated', key: 'albums_rated' },
+  { label: 'Songs rated', key: 'songs_rated' },
+  { label: 'Reviews written', key: 'reviews_written' },
+  { label: 'Helpful votes received', key: 'helpful_received' },
+  { label: 'Total contributions', key: 'total_contributions' },
 ];
+
+type MyReviewRow = MyReview & { target_type: TargetType; target_id: string };
 
 const EYE =
   'M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5C21.3 7.6 17 4.5 12 4.5zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z';
@@ -109,6 +115,35 @@ export function AccountPanel() {
   // Delete-account — local state only.
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [delNote, setDelNote] = useState<string | null>(null);
+
+  // My Contributions — live from the reviews API, refetched whenever the page
+  // mounts, so a rating made on an album shows up on the next visit here.
+  const [contrib, setContrib] = useState<Contributions | null>(null);
+  const [myReviews, setMyReviews] = useState<MyReviewRow[]>([]);
+  const [contribErr, setContribErr] = useState(false);
+
+  // Keyed on userId, not `session` — the session object's identity changes and
+  // would re-run this effect endlessly.
+  const userId = session?.userId;
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [c, r] = await Promise.all([getContributions(), getMyReviews()]);
+        if (cancelled) return;
+        setContrib(c);
+        setMyReviews(r ?? []);
+        setContribErr(false);
+      } catch {
+        // Don't blank the card on a blip — say so instead of showing fake zeros.
+        if (!cancelled) setContribErr(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const onDownloadTable = useCallback(() => downloadLetterTable(), []);
 
@@ -354,17 +389,47 @@ export function AccountPanel() {
             </p>
           </div>
 
+          {contribErr && (
+            <p className={`${styles.msg} ${styles.msgErr}`}>
+              Could not load your contributions just now. Reload to try again.
+            </p>
+          )}
+
           <div className={styles.contribCards}>
-            {CONTRIBUTIONS.map((c) => (
+            {CONTRIB_ROWS.map((c) => (
               <div className={styles.contribCard} key={c.label}>
-                <div className={styles.contribNum}>{c.value.toLocaleString()}</div>
+                {/* An em dash until the real number arrives — never a fake 0. */}
+                <div className={styles.contribNum}>
+                  {contrib ? contrib[c.key].toLocaleString() : '—'}
+                </div>
                 <div className={styles.contribLbl}>{c.label}</div>
               </div>
             ))}
           </div>
 
           <h3 className={styles.contribSub}>Your reviews</h3>
-          <p className={styles.contribEmpty}>You haven&apos;t written any reviews yet.</p>
+          {myReviews.length === 0 ? (
+            <p className={styles.contribEmpty}>You haven&apos;t written any reviews yet.</p>
+          ) : (
+            <ul className={styles.reviewList}>
+              {myReviews.map((r) => (
+                <li className={styles.reviewRow} key={r.id}>
+                  <div className={styles.reviewMeta}>
+                    <span className={styles.reviewStars} aria-label={`${r.stars} out of 5 stars`}>
+                      {'★'.repeat(r.stars)}
+                      <span className={styles.reviewStarsOff}>{'★'.repeat(5 - r.stars)}</span>
+                    </span>
+                    <span className={styles.reviewTarget}>{r.target_type}</span>
+                    <span className={styles.reviewDate}>
+                      {new Date(r.created_at).toLocaleDateString()}
+                      {r.edited ? ' · edited' : ''}
+                    </span>
+                  </div>
+                  {r.body ? <p className={styles.reviewBody}>{r.body}</p> : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         {/* ---- Danger zone (presentation only) ---- */}

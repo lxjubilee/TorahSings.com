@@ -516,8 +516,8 @@
 
 .rateModal {
   width: 100%;
-  max-width: 440px;
-  padding: 22px 24px;
+  max-width: 500px;
+  padding: 24px 26px 22px;
   border: 1px solid var(--hairline-strong);
   border-radius: var(--radius);
   background: var(--bg-panel);
@@ -533,10 +533,15 @@
 
 .rateTitle {
   margin: 0;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 700;
   color: var(--ink);
-  text-transform: capitalize;
+  /* No capitalize here — the target's own name follows and must not be mangled. */
+}
+
+/* "Rate <target>" — the target carries the gold. */
+.rateTitleTarget {
+  color: var(--accent);
 }
 
 .rateX {
@@ -553,45 +558,71 @@
   color: var(--ink);
 }
 
-.rateTarget {
-  margin: 4px 0 16px;
-  font-size: 14px;
-  color: var(--ink-body);
-}
-
+/* Stars sit left under their label, not centred. */
 .rateStars {
   display: flex;
-  justify-content: center;
-  padding: 6px 0 16px;
+  justify-content: flex-start;
+  padding: 2px 0 0;
 }
 
 .rateField {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
+  margin-top: 16px;
 }
 
-.rateField > span {
-  font-size: 13px;
+.rateLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Required marker on "Your rating". */
+.rateReq {
+  color: var(--accent-rose);
+}
+
+.rateOpt {
+  font-weight: 400;
   color: var(--ink-muted);
 }
 
+.rateInput,
 .rateField textarea {
   width: 100%;
-  padding: 10px 12px;
+  padding: 11px 13px;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: var(--bg-deep);
+  background: var(--bg-card);
   color: var(--ink);
   font-family: inherit;
   font-size: 14px;
   line-height: 1.5;
-  resize: vertical;
 }
 
+.rateField textarea {
+  resize: vertical;
+  min-height: 92px;
+}
+
+.rateInput::placeholder,
+.rateField textarea::placeholder {
+  color: var(--ink-faint);
+}
+
+.rateInput:focus,
 .rateField textarea:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+/* Live character count, right-aligned under the textarea. */
+.rateCount {
+  align-self: flex-end;
+  font-size: 12px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .rateNotice {
@@ -610,13 +641,13 @@
 .rateActions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 18px;
+  gap: 12px;
+  margin-top: 22px;
 }
 
 .rateCancel,
 .rateSave {
-  padding: 9px 18px;
+  padding: 10px 22px;
   border-radius: 8px;
   font-family: inherit;
   font-size: 14px;
@@ -635,14 +666,21 @@
   color: var(--ink);
 }
 
+/* Rose, per the reviews dialog spec — the one rose call-to-action on the page. */
 .rateSave {
   border: none;
-  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
-  color: #241a02;
+  background: var(--accent-rose);
+  color: #fff;
 }
 
 .rateSave:hover {
-  filter: brightness(1.04);
+  filter: brightness(1.08);
+}
+
+.rateCancel:disabled,
+.rateSave:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 /* A column now, not a single line: the title sits above its rating control,

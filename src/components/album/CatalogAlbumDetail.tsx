@@ -1,25 +1,37 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useAudio } from '@/components/audio/AudioProvider';
 import { CelestialArt } from '@/components/system/CelestialArt';
 import { StarRating } from '@/components/system/StarRating';
 import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
-import { SongRating, type SongSummary } from './SongRating';
+import { ApiError } from '@/lib/api';
+import { albumUuid, songUuid } from '@/lib/ids';
+import { useJubileeAccount } from '@/lib/jubilee-account';
+import {
+  batchSummaries,
+  summaryKey,
+  upsertReview,
+  type ReviewSummary,
+  type Target,
+  type TargetType,
+} from '@/lib/reviews';
+import { SongRating } from './SongRating';
 import styles from './CatalogAlbumDetail.module.css';
 
 /**
- * Where a visitor's own ratings live until the reviews API is wired.
+ * Ratings are real: the album and every track are rated through
+ * /api/reviews/:type/:id, and their aggregates come from
+ * production.review_summaries (maintained by a DB trigger — nothing is averaged
+ * on read). Summaries for the whole page load in ONE batch call, as JubiLujah
+ * does, rather than a request per track.
  *
- * There is no ratings backend yet, so a rating never leaves this browser and no
- * aggregate is invented: if you have rated, the count is 1 (you) — otherwise 0.
- * When the reviews router comes up, replace readSongRatings/saveRating with
- * GET/PUT /api/reviews/:type/:id (docs/API.md §7) and the components above need
- * no change — SongSummary already mirrors the API's ReviewSummary shape.
+ * The rateable id is derived from the album code (lib/ids.ts) and matches
+ * api/src/ids.js exactly, so the catalog never needs to be in the database.
+ *
+ * Reading is public; writing needs a signed-in Jubilee Account.
  */
-const songKey = (code: string, n: number) => `ts.rating.song.${code}.${n}`;
-const albumKey = (code: string) => `ts.rating.${code}`;
 
 /** Lightweight album shape for the side-column lists (no track payload). */
 export interface MiniAlbum {
@@ -68,6 +80,7 @@ export function CatalogAlbumDetail({
   more: MiniAlbum[];
 }) {
   const { current, playing, toggle, isCurrent } = useAudio();
+  const { session, signIn } = useJubileeAccount();
   const playable = hasAudio(album);
   const queue = albumPlayables(album);
 
@@ -75,46 +88,51 @@ export function CatalogAlbumDetail({
   const [following, setFollowing] = useState(false);
   const [added, setAdded] = useState<Set<number>>(new Set());
 
-  // Per-song ratings. Read in an effect, never during render — localStorage does
-  // not exist on the server and reading it inline would break hydration.
-  const [songRatings, setSongRatings] = useState<Record<number, number>>({});
-  const [rateTarget, setRateTarget] = useState<{ type: 'album' | 'song'; n: number; label: string } | null>(null);
+  // Summaries keyed "album:<uuid>" / "song:<uuid>", loaded in one batch.
+  const [summaries, setSummaries] = useState<Record<string, ReviewSummary>>({});
+  const [rateTarget, setRateTarget] = useState<{ type: TargetType; n: number; label: string } | null>(null);
+
+  const targets = useMemo<Target[]>(
+    () => [
+      { type: 'album' as const, id: albumUuid(album.code) },
+      ...album.tracks.map((t) => ({ type: 'song' as const, id: songUuid(album.code, t.n) })),
+    ],
+    [album.code, album.tracks],
+  );
+
+  const loadSummaries = useCallback(async () => {
+    try {
+      const res = await batchSummaries(targets);
+      setSummaries(res?.summaries ?? {});
+    } catch {
+      // Ratings are an enhancement — an unreachable API must not break the page.
+      setSummaries({});
+    }
+  }, [targets]);
 
   useEffect(() => {
-    const out: Record<number, number> = {};
-    try {
-      for (const t of album.tracks) {
-        const v = Number(window.localStorage.getItem(songKey(album.code, t.n)));
-        if (v) out[t.n] = v;
-      }
-    } catch {
-      /* storage unavailable — ratings simply will not persist */
-    }
-    setSongRatings(out);
-  }, [album.code, album.tracks]);
+    void loadSummaries();
+  }, [loadSummaries]);
 
-  const songSummary = (n: number): SongSummary | null => {
-    const mine = songRatings[n];
-    return mine ? { average: mine, rating_count: 1, mine } : null;
+  const albumSummary = summaries[summaryKey('album', albumUuid(album.code))] ?? null;
+  const songSummary = (n: number) => summaries[summaryKey('song', songUuid(album.code, n))] ?? null;
+
+  /**
+   * Writing a rating is requireAuth, so a guest is sent to sign in and returned
+   * here rather than shown a dialog that can only 401.
+   */
+  const openRate = (type: TargetType, n: number, label: string) => {
+    if (!session) {
+      signIn();
+      return;
+    }
+    setRateTarget({ type, n, label });
   };
 
-  const openRate = (type: 'album' | 'song', n: number, label: string) =>
-    setRateTarget({ type, n, label });
-
-  const saveRating = (stars: number) => {
-    if (!rateTarget) return;
-    const key = rateTarget.type === 'album' ? albumKey(album.code) : songKey(album.code, rateTarget.n);
-    try {
-      window.localStorage.setItem(key, String(stars));
-    } catch {
-      /* storage unavailable */
-    }
-    if (rateTarget.type === 'song') {
-      setSongRatings((prev) => ({ ...prev, [rateTarget.n]: stars }));
-    } else {
-      // The album box owns its own state; tell it to re-read.
-      window.dispatchEvent(new CustomEvent('ts:album-rating', { detail: stars }));
-    }
+  /** The API returns the recalculated summary, so we patch it in rather than refetch. */
+  const onRated = (type: TargetType, n: number, summary: ReviewSummary) => {
+    const id = type === 'album' ? albumUuid(album.code) : songUuid(album.code, n);
+    setSummaries((prev) => ({ ...prev, [summaryKey(type, id)]: summary }));
     setRateTarget(null);
   };
 
@@ -200,7 +218,7 @@ export function CatalogAlbumDetail({
                 )}
               </div>
 
-              <AlbumRating code={album.code} onRate={() => openRate('album', 0, album.title)} />
+              <AlbumRating summary={albumSummary} onRate={() => openRate('album', 0, album.title)} />
             </div>
           </div>
 
@@ -305,15 +323,23 @@ export function CatalogAlbumDetail({
         </aside>
       </div>
 
-      {rateTarget && (
-        <RateDialog
-          type={rateTarget.type}
-          label={rateTarget.label}
-          initial={rateTarget.type === 'song' ? (songRatings[rateTarget.n] ?? 0) : 0}
-          onSave={saveRating}
-          onClose={() => setRateTarget(null)}
-        />
-      )}
+      {rateTarget &&
+        (() => {
+          // The caller's existing review for this target, when they have one — it
+          // pre-fills the dialog. `title` must be carried through: dropping it
+          // would blank the field and wipe the stored title on the next save.
+          const mine = (rateTarget.type === 'album' ? albumSummary : songSummary(rateTarget.n))?.mine ?? null;
+          return (
+            <RateDialog
+              type={rateTarget.type}
+              id={rateTarget.type === 'album' ? albumUuid(album.code) : songUuid(album.code, rateTarget.n)}
+              label={rateTarget.label}
+              initial={mine ? { stars: mine.stars, title: mine.title, body: mine.body } : null}
+              onSaved={(summary) => onRated(rateTarget.type, rateTarget.n, summary)}
+              onClose={() => setRateTarget(null)}
+            />
+          );
+        })()}
     </div>
   );
 }
@@ -330,19 +356,49 @@ export function CatalogAlbumDetail({
 function RateDialog({
   label,
   type,
+  id,
   initial,
-  onSave,
+  onSaved,
   onClose,
 }: {
   label: string;
-  type: 'album' | 'song';
-  initial: number;
-  onSave: (stars: number) => void;
+  type: TargetType;
+  /** The derived uuid — see lib/ids.ts. */
+  id: string;
+  initial: { stars: number; title: string | null; body: string | null } | null;
+  onSaved: (summary: ReviewSummary) => void;
   onClose: () => void;
 }) {
-  const [stars, setStars] = useState(initial);
-  const [note, setNote] = useState('');
+  const [stars, setStars] = useState(initial?.stars ?? 0);
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [note, setNote] = useState(initial?.body ?? '');
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    if (stars < 1) {
+      setErr('Please choose a star rating.');
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await upsertReview(type, id, {
+        stars,
+        title: title.trim() || null,
+        body: note.trim() || null,
+      });
+      onSaved(res.summary);
+    } catch (e) {
+      // 401 => the token expired or they signed out in another tab.
+      if (e instanceof ApiError && e.status === 401) {
+        setErr('Please sign in again to rate.');
+      } else {
+        setErr(e instanceof ApiError ? e.message : 'Could not save your rating.');
+      }
+      setBusy(false);
+    }
+  };
 
   // Escape closes, as it does on JubiLujah.
   useEffect(() => {
@@ -363,59 +419,69 @@ function RateDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.rateHead}>
-          <h3 className={styles.rateTitle}>Rate this {type}</h3>
+          <h3 className={styles.rateTitle}>
+            Rate <span className={styles.rateTitleTarget}>{label}</span>
+          </h3>
           <button type="button" className={styles.rateX} onClick={onClose} aria-label="Close">
             ×
           </button>
         </div>
 
-        <p className={styles.rateTarget}>{label}</p>
-
-        <div className={styles.rateStars}>
-          <StarRating
-            value={stars}
-            onChange={(n) => {
-              setStars(n);
-              setErr(null);
-            }}
-            size="lg"
-            ariaLabel={`Your rating for ${label}`}
-          />
+        {/* Not a <label>: the control is a radiogroup, which a label cannot target. */}
+        <div className={styles.rateField}>
+          <span className={styles.rateLabel}>
+            Your rating <span className={styles.rateReq} aria-hidden="true">*</span>
+          </span>
+          <div className={styles.rateStars}>
+            <StarRating
+              value={stars}
+              onChange={(n) => {
+                setStars(n);
+                setErr(null);
+              }}
+              size="lg"
+              ariaLabel={`Your rating for ${label}`}
+            />
+          </div>
         </div>
 
         <label className={styles.rateField}>
-          <span>Add a note (optional)</span>
-          <textarea
-            rows={3}
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="What did you hear in it?"
+          <span className={styles.rateLabel}>
+            Review title <span className={styles.rateOpt}>(optional)</span>
+          </span>
+          <input
+            type="text"
+            className={styles.rateInput}
+            maxLength={150}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Sum it up in a few words"
           />
         </label>
 
-        <p className={styles.rateNotice}>
-          Your stars are kept on this device only. Notes are not saved yet — reviews arrive with your Jubilee
-          Account.
-        </p>
+        <label className={styles.rateField}>
+          <span className={styles.rateLabel}>
+            Your review <span className={styles.rateOpt}>(optional)</span>
+          </span>
+          <textarea
+            rows={5}
+            maxLength={5000}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What did you think of it?"
+          />
+          {/* Mirrors the API's 5000-char ceiling on `body`. */}
+          <span className={styles.rateCount}>{note.length}/5000</span>
+        </label>
 
         {err && <p className={styles.rateErr}>{err}</p>}
 
         <div className={styles.rateActions}>
-          <button type="button" className={styles.rateCancel} onClick={onClose}>
+          <button type="button" className={styles.rateCancel} onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button
-            type="button"
-            className={styles.rateSave}
-            onClick={() => {
-              if (stars < 1) {
-                setErr('Please choose a star rating.');
-                return;
-              }
-              onSave(stars);
-            }}
-          >
-            Save rating
+          <button type="button" className={styles.rateSave} onClick={save} disabled={busy}>
+            {busy ? 'Submitting…' : 'Submit'}
           </button>
         </div>
       </div>
@@ -428,39 +494,18 @@ function RateDialog({
  * an honest local control: the visitor's own star rating, persisted in
  * localStorage — no invented aggregate score.
  */
-function AlbumRating({ code, onRate }: { code: string; onRate: () => void }) {
-  const [rating, setRating] = useState(0);
+function AlbumRating({ summary, onRate }: { summary: ReviewSummary | null; onRate: () => void }) {
   const [hover, setHover] = useState(0);
   const [showReviews, setShowReviews] = useState(false);
   const starsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    try {
-      const v = Number(window.localStorage.getItem(`ts.rating.${code}`));
-      if (v) setRating(v);
-    } catch {
-      /* storage unavailable */
-    }
-  }, [code]);
+  // The aggregate across everyone; `mine` is this visitor's own stars.
+  const average = summary?.average ?? 0;
+  const count = summary?.rating_count ?? 0;
+  const rating = summary?.mine?.stars ?? 0;
 
-  // The rate dialog lives in the parent, so it announces saves rather than
-  // reaching in here.
-  useEffect(() => {
-    const onSaved = (e: Event) => setRating((e as CustomEvent<number>).detail);
-    window.addEventListener('ts:album-rating', onSaved);
-    return () => window.removeEventListener('ts:album-rating', onSaved);
-  }, []);
-
-  const rate = (n: number) => {
-    setRating(n);
-    try {
-      window.localStorage.setItem(`ts.rating.${code}`, String(n));
-    } catch {
-      /* storage unavailable */
-    }
-  };
-
-  const shown = hover || rating;
+  // Hovering previews your own rating; otherwise the box shows the aggregate.
+  const shown = hover || rating || average;
 
   return (
     <div className={styles.ratingBox}>
@@ -473,18 +518,20 @@ function AlbumRating({ code, onRate }: { code: string; onRate: () => void }) {
               className={styles.star}
               data-on={i <= shown ? 'yes' : 'no'}
               onMouseEnter={() => setHover(i)}
-              onClick={() => rate(i)}
+              onClick={onRate}
               aria-label={`Rate ${i} star${i > 1 ? 's' : ''}`}
             >
               ★
             </button>
           ))}
         </div>
-        <span className={`${styles.ratingNum} ${rating ? '' : styles.ratingNumNone}`}>
-          {rating ? rating.toFixed(1) : '—'}
+        <span className={`${styles.ratingNum} ${count ? '' : styles.ratingNumNone}`}>
+          {count ? average.toFixed(1) : '—'}
         </span>
         <span className={styles.ratingCount}>
-          {rating ? 'Your rating' : 'No ratings yet — be the first'}
+          {count
+            ? `${count.toLocaleString()} rating${count === 1 ? '' : 's'}${rating ? ` · yours: ${rating}` : ''}`
+            : 'No ratings yet — be the first'}
         </span>
       </div>
 

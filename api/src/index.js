@@ -21,6 +21,7 @@ import { notFound, errorHandler } from './middleware/error.js';
 
 import authRouter from './routes/auth.js';
 import adminRouter from './routes/adminUsers.js';
+import reviewsRouter from './routes/reviews.js';
 import serviceRouter from './routes/service.js';
 import serviceTokenRouter from './routes/serviceToken.js';
 import { serviceRateKey } from './middleware/serviceAuth.js';
@@ -70,6 +71,15 @@ app.use('/api/auth/admin', serviceLimiter, serviceRouter);
 // Public auth surface: signup / verify-signup / signin / verify-login /
 // forgot-password / reset-password / change-password / refresh / me / logout.
 app.use('/api/auth', authLimiter, authRouter);
+
+// Public rating + review surface. Reads (summaries) are open; writing a rating
+// is requireAuth, so it only became usable once sign-in delegated to JI.
+// Rateable ids are UUIDv5 derived from the album code (see ids.js) — the
+// catalog itself is not in the database, so nothing here depends on it. The one
+// exception is GET /artist/:slug/summary, which reads the catalog manifest;
+// with no MANIFEST_PATH configured getManifest() falls back to an empty catalog
+// rather than throwing, so that route simply finds nothing.
+app.use('/api/reviews', writeLimiter, reviewsRouter);
 
 // Admin surface — GET /api/admin/users etc. The router itself enforces
 // requireRole('admin'), so every route here needs an admin user's access token.
