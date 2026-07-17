@@ -66,7 +66,13 @@ export function jiVerifyLogin({ verificationGuid, code, ip }) {
 //                            falls through (the first-login provision path still
 //                            reconciles a genuine duplicate via a 409).
 export async function jiCheckEmail(email) {
-  const url = `${config.jiLogin.baseUrl}${CHECK_EMAIL_PATH}?email=${encodeURIComponent(email)}`;
+  // The check-email guard normally targets the same JI as login (config.jiLogin.baseUrl).
+  // JI_CHECK_EMAIL_BASE overrides ONLY this guard, so the signup duplicate-check can be
+  // pointed at JI UAT for testing without redirecting real user LOGINS there (login keeps
+  // using config.jiLogin.baseUrl). Never point login at UAT in prod — real accounts live
+  // in JI prod, so UAT delegation would lock every real user out.
+  const base = (process.env.JI_CHECK_EMAIL_BASE || config.jiLogin.baseUrl).replace(/\/$/, '');
+  const url = `${base}${CHECK_EMAIL_PATH}?email=${encodeURIComponent(email)}`;
   let res;
   try {
     res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
