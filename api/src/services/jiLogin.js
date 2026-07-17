@@ -25,6 +25,7 @@ import { logger } from '../logger.js';
 
 const LOGIN_PATH = '/api/auth/login';
 const VERIFY_PATH = '/api/auth/verify-login';
+const CHECK_EMAIL_PATH = '/api/auth/check-email';
 
 async function jiPost(path, payload, ip) {
   const url = `${config.jiLogin.baseUrl}${path}`;
@@ -53,4 +54,34 @@ export function jiLogin({ email, password, cfTurnstileToken, rememberMe, verific
 // Complete a 2FA challenge JI issued (verificationGuid + the 6-digit code).
 export function jiVerifyLogin({ verificationGuid, code, ip }) {
   return jiPost(VERIFY_PATH, { verificationGuid, code }, ip);
+}
+
+// Pre-signup guard: does JubileeInspire (the prod credential authority) already
+// know this email? In `ji` mode an email can exist on JI with no local row yet,
+// so signup's local-only check isn't enough to stop a divergent duplicate.
+//   GET {base}/api/auth/check-email?email=<email>  ->  { exists: boolean, ... }
+// Best-effort by design — this must never block signup on a JI hiccup:
+//   { exists:true|false }  — JI gave a clear answer
+//   { unknown:true }       — JI unreachable / non-OK / unparseable => caller
+//                            falls through (the first-login provision path still
+//                            reconciles a genuine duplicate via a 409).
+export async function jiCheckEmail(email) {
+  const url = `${config.jiLogin.baseUrl}${CHECK_EMAIL_PATH}?email=${encodeURIComponent(email)}`;
+  let res;
+  try {
+    res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
+  } catch (err) {
+    logger.warn({ err, email }, 'JI check-email unreachable — allowing signup to proceed');
+    return { unknown: true };
+  }
+  if (!res.ok) {
+    logger.warn({ email, status: res.status }, 'JI check-email non-OK — allowing signup to proceed');
+    return { unknown: true };
+  }
+  const body = await res.json().catch(() => null);
+  if (!body || typeof body.exists !== 'boolean') {
+    logger.warn({ email, body }, 'JI check-email unexpected body — allowing signup to proceed');
+    return { unknown: true };
+  }
+  return { exists: body.exists };
 }

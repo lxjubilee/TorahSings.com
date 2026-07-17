@@ -13,7 +13,7 @@ import {
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { sendPasswordResetEmail, sendLoginVerificationEmail, sendSignupVerificationEmail } from '../services/email.js';
 import { syncPasswordToJI, provisionUserToJI } from '../services/jiSync.js';
-import { jiLogin } from '../services/jiLogin.js';
+import { jiLogin, jiCheckEmail } from '../services/jiLogin.js';
 import { logger } from '../logger.js';
 
 // Default role for self-service sign-ups (configurable). content_editor lets a
@@ -279,6 +279,17 @@ router.post('/signup', validate(signupSchema), ah(async (req, res) => {
 
   const existing = await query('SELECT 1 FROM identity.users WHERE email = $1 AND is_active = TRUE', [emailNorm]);
   if (existing.rowCount) throw new HttpError(409, 'An account with this email already exists. Please sign in.');
+
+  // Prod (ji mode): JubileeInspire is the account directory, so an email can
+  // already exist on JI with no local row yet — the local check above would miss
+  // it and we'd create a divergent duplicate. Ask JI before issuing a code. Same
+  // generic 409 as the local hit (no new enumeration surface — signup already
+  // reveals existence). Best-effort: a JI outage returns `unknown` and we fall
+  // through, exactly as before this guard existed.
+  if (config.loginMode === 'ji') {
+    const ji = await jiCheckEmail(emailNorm);
+    if (ji.exists) throw new HttpError(409, 'An account with this email already exists. Please sign in.');
+  }
 
   const code = genOtpCode();
   const guid = await withTransaction(async (client) => {
