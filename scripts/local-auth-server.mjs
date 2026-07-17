@@ -215,12 +215,103 @@ db.exec(`
     detail     TEXT,
     created_at INTEGER NOT NULL
   );
+
+  -- Mirrors production.user_reviews (api/src/routes/reviews.js). Postgres keeps a
+  -- trigger-maintained production.review_summaries alongside it; here the summary
+  -- is computed on read instead — the row counts are tiny locally and it removes
+  -- a cache that could drift.
+  CREATE TABLE IF NOT EXISTS reviews (
+    id            TEXT PRIMARY KEY,
+    target_type   TEXT NOT NULL,
+    target_id     TEXT NOT NULL,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    stars         INTEGER NOT NULL,
+    title         TEXT,
+    body          TEXT,
+    helpful_count INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    deleted_at    INTEGER,
+    UNIQUE (target_type, target_id, user_id)
+  );
 `);
 
 const now = () => Date.now();
 const audit = (userId, action, detail) =>
   db.prepare('INSERT INTO audit (user_id, action, detail, created_at) VALUES (?,?,?,?)')
     .run(userId, action, JSON.stringify(detail ?? {}), now());
+
+// ------------------------------------------------------------------ reviews ---
+// Mirrors api/src/routes/reviews.js. The DTO shapes below are what
+// src/lib/reviews.ts types against — keep them identical or the web breaks.
+
+/** Bearer -> user row, or null. The read counterpart of requireUser. */
+function currentUser(req) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  const payload = token ? verifyToken(token, 'access') : null;
+  if (!payload?.sub) return null;
+  return db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(payload.sub) || null;
+}
+
+function requireUser(req) {
+  const u = currentUser(req);
+  if (!u) throw new HttpError(401, 'Authentication required.');
+  return u;
+}
+
+const EMPTY_SUMMARY = (type, id) => ({
+  target_type: type,
+  target_id: id,
+  average: null,
+  rating_count: 0,
+  review_count: 0,
+  distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+});
+
+/** `status` is always 'published' here — local dev has no moderation queue. */
+const reviewDto = (r) => ({
+  id: r.id,
+  stars: r.stars,
+  title: r.title,
+  body: r.body,
+  status: 'published',
+  helpful_count: r.helpful_count,
+  created_at: new Date(r.created_at).toISOString(),
+  edited: r.updated_at > r.created_at,
+});
+
+function summaryFor(type, id) {
+  const rows = db
+    .prepare('SELECT stars, body FROM reviews WHERE target_type=? AND target_id=? AND deleted_at IS NULL')
+    .all(type, id);
+  if (!rows.length) return EMPTY_SUMMARY(type, id);
+  const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let sum = 0;
+  let reviewCount = 0;
+  for (const r of rows) {
+    distribution[r.stars] = (distribution[r.stars] || 0) + 1;
+    sum += r.stars;
+    if (r.body && r.body.trim()) reviewCount += 1;
+  }
+  return {
+    target_type: type,
+    target_id: id,
+    // 2dp, matching the Postgres ROUND(...,2) on review_summaries.avg_stars.
+    average: Math.round((sum / rows.length) * 100) / 100,
+    rating_count: rows.length,
+    review_count: reviewCount,
+    distribution,
+  };
+}
+
+function mineFor(userId, type, id) {
+  if (!userId) return null;
+  const r = db
+    .prepare('SELECT * FROM reviews WHERE target_type=? AND target_id=? AND user_id=? AND deleted_at IS NULL')
+    .get(type, id, userId);
+  return r ? reviewDto(r) : null;
+}
 
 // ------------------------------------------------------------------ helpers ---
 class HttpError extends Error {
@@ -492,7 +583,155 @@ const routes = {
     }
     return { status: 200, body: { ok: true } };
   },
+
+  // ---- Reviews: fixed paths (these must win over the /:type/:id patterns) ----
+
+  /** Batch summaries for an album + its songs in one round-trip. Public. */
+  'POST /api/reviews/summaries': (body, req) => {
+    const targets = Array.isArray(body?.targets) ? body.targets : [];
+    if (!targets.length) throw new HttpError(400, 'targets is required.');
+    const user = currentUser(req); // optional — `mine` is null when signed out
+    const summaries = {};
+    for (const t of targets) {
+      summaries[`${t.type}:${t.id}`] = {
+        ...summaryFor(t.type, t.id),
+        mine: mineFor(user?.id, t.type, t.id),
+      };
+    }
+    return { status: 200, body: { summaries } };
+  },
+
+  /** The counters behind the account page's "My Contributions" card. */
+  'GET /api/reviews/me/contributions': (_body, req) => {
+    const user = requireUser(req);
+    const rows = db
+      .prepare('SELECT target_type, body, helpful_count FROM reviews WHERE user_id=? AND deleted_at IS NULL')
+      .all(user.id);
+    return {
+      status: 200,
+      body: {
+        albums_rated: rows.filter((r) => r.target_type === 'album').length,
+        songs_rated: rows.filter((r) => r.target_type === 'song').length,
+        reviews_written: rows.filter((r) => r.body && r.body.trim()).length,
+        total_contributions: rows.length,
+        helpful_received: rows.reduce((n, r) => n + (r.helpful_count || 0), 0),
+      },
+    };
+  },
+
+  /** The caller's own reviews, newest first. */
+  'GET /api/reviews/me/reviews': (_body, req) => {
+    const user = requireUser(req);
+    const rows = db
+      .prepare('SELECT * FROM reviews WHERE user_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 200')
+      .all(user.id);
+    return {
+      status: 200,
+      body: rows.map((r) => ({ ...reviewDto(r), target_type: r.target_type, target_id: r.target_id })),
+    };
+  },
 };
+
+// ---------------------------------------------------------- pattern routes ---
+// The table above is an exact `METHOD /path` match, which cannot express
+// /api/reviews/:type/:id. These regex routes are tried only when that misses.
+// Order matters: /summary must be tested before the bare /:type/:id.
+const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+const TARGET = new RegExp(`^/api/reviews/(album|song)/(${UUID})$`);
+const TARGET_SUMMARY = new RegExp(`^/api/reviews/(album|song)/(${UUID})/summary$`);
+
+const patternRoutes = [
+  {
+    method: 'GET',
+    re: TARGET_SUMMARY,
+    handler: ([, type, id], _body, req) => ({
+      status: 200,
+      body: { ...summaryFor(type, id), mine: mineFor(currentUser(req)?.id, type, id) },
+    }),
+  },
+
+  /** Published reviews for one target (only rows that carry a body). Public. */
+  {
+    method: 'GET',
+    re: TARGET,
+    handler: ([, type, id], _body, req, url) => {
+      const page = Math.max(1, parseInt(url.searchParams.get('page'), 10) || 1);
+      const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 10));
+      const sort = ['recent', 'highest', 'lowest', 'helpful'].includes(url.searchParams.get('sort'))
+        ? url.searchParams.get('sort')
+        : 'recent';
+      const order = { recent: 'created_at DESC', highest: 'stars DESC, created_at DESC',
+                      lowest: 'stars ASC, created_at DESC', helpful: 'helpful_count DESC, created_at DESC' }[sort];
+      const me = currentUser(req);
+      const WHERE = `r.target_type=? AND r.target_id=? AND r.deleted_at IS NULL
+                     AND r.body IS NOT NULL AND trim(r.body) <> ''`;
+      const total = db.prepare(`SELECT COUNT(*) AS n FROM reviews r WHERE ${WHERE}`).get(type, id).n;
+      const rows = db
+        .prepare(`SELECT r.*, u.display_name AS author_name
+                    FROM reviews r JOIN users u ON u.id = r.user_id
+                   WHERE ${WHERE}
+                   ORDER BY r.${order}
+                   LIMIT ? OFFSET ?`)
+        .all(type, id, limit, (page - 1) * limit);
+      return {
+        status: 200,
+        body: {
+          items: rows.map((r) => ({
+            ...reviewDto(r),
+            target_type: r.target_type,
+            target_id: r.target_id,
+            author: { display_name: r.author_name || 'Anonymous', avatar_url: null },
+            mine: !!me && r.user_id === me.id,
+            voted: false,
+          })),
+          page, limit, total, has_more: (page - 1) * limit + rows.length < total, sort,
+        },
+      };
+    },
+  },
+
+  /** Upsert the caller's rating/note. Keyed (target_type, target_id, user). */
+  {
+    method: 'PUT',
+    re: TARGET,
+    handler: ([, type, id], body, req) => {
+      const user = requireUser(req);
+      const stars = body?.stars;
+      if (!Number.isInteger(stars) || stars < 1 || stars > 5) {
+        throw new HttpError(400, 'stars must be a whole number from 1 to 5.');
+      }
+      const title = typeof body?.title === 'string' && body.title.trim() ? body.title.trim().slice(0, 150) : null;
+      const text = typeof body?.body === 'string' && body.body.trim() ? body.body.trim().slice(0, 5000) : null;
+      const t = now();
+      const existing = db.prepare('SELECT id FROM reviews WHERE target_type=? AND target_id=? AND user_id=?')
+        .get(type, id, user.id);
+      if (existing) {
+        db.prepare('UPDATE reviews SET stars=?, title=?, body=?, updated_at=?, deleted_at=NULL WHERE id=?')
+          .run(stars, title, text, t, existing.id);
+      } else {
+        db.prepare(`INSERT INTO reviews (id, target_type, target_id, user_id, stars, title, body, created_at, updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?)`)
+          .run(crypto.randomUUID(), type, id, user.id, stars, title, text, t, t);
+      }
+      const row = db.prepare('SELECT * FROM reviews WHERE target_type=? AND target_id=? AND user_id=?')
+        .get(type, id, user.id);
+      audit(user.id, 'review.upsert', { type, id, stars });
+      return { status: 200, body: { review: reviewDto(row), summary: summaryFor(type, id) } };
+    },
+  },
+
+  /** Soft-delete, as Postgres does — the row stays, deleted_at is stamped. */
+  {
+    method: 'DELETE',
+    re: TARGET,
+    handler: ([, type, id], _body, req) => {
+      const user = requireUser(req);
+      db.prepare(`UPDATE reviews SET deleted_at=? WHERE target_type=? AND target_id=? AND user_id=? AND deleted_at IS NULL`)
+        .run(now(), type, id, user.id);
+      return { status: 200, body: { deleted: true, summary: summaryFor(type, id) } };
+    },
+  },
+];
 
 // ------------------------------------------------------------------- server ---
 const server = http.createServer(async (req, res) => {
@@ -514,7 +753,18 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  const handler = routes[key];
+  // Exact match first; fall back to the /:type/:id regex routes.
+  let handler = routes[key];
+  if (!handler) {
+    for (const p of patternRoutes) {
+      if (p.method !== req.method) continue;
+      const m = p.re.exec(url.pathname);
+      if (m) {
+        handler = (b, rq, u) => p.handler(m, b, rq, u);
+        break;
+      }
+    }
+  }
   if (!handler) {
     res.writeHead(404, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ error: 'not_found', message: `No route for ${key}` }));

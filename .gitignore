@@ -9,6 +9,9 @@ node_modules/
 
 # Next.js
 /.next/
+# Alternate build dirs from NEXT_DIST_DIR (see next.config.mjs) — used to get
+# past a wedged Turbopack cache on the SMB drive.
+/.next-*/
 /out/
 /build
 next-env.d.ts

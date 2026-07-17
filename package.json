@@ -13,7 +13,8 @@
     "verify": "node scripts/verify-content.mjs",
     "check": "npm run typecheck && npm run verify && npm run build",
     "catalog": "node scripts/build-angels-catalog.mjs",
-    "audio:placeholder": "node scripts/generate-placeholder-audio.mjs"
+    "audio:placeholder": "node scripts/generate-placeholder-audio.mjs",
+    "status": "node scripts/status.mjs"
   },
   "dependencies": {
     "next": "^16.2.10",
