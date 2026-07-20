@@ -2,6 +2,23 @@
 
 /* ---- section head + inline create form (JubiLujah's plx-section-head) ---- */
 
+/* Intro block above the grid — JubiLujah leads /playlists the same way. */
+.introTitle {
+  margin: 0 0 8px;
+  font-family: var(--font-display), serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.introBody {
+  margin: 0 0 30px;
+  max-width: 68ch;
+  color: var(--ink-body);
+  font-size: 1rem;
+  line-height: 1.72;
+}
+
 .sectionHead {
   display: flex;
   align-items: center;

@@ -58,10 +58,12 @@ router.get('/playlists', ah(async (req, res) => {
     [userId, DEFAULT_PLAYLIST_NAME]
   );
   // Cover = the album cover of the playlist's first track (resolved from the manifest).
-  const rows = r.rows.map(({ first_song_id, ...pl }) => ({
+  // first_song_id is passed through as well: TorahSings has no manifest, so its
+  // client resolves the same cover from its own catalog by deriving the song id.
+  const rows = r.rows.map((pl) => ({
     ...pl,
     is_default: pl.name === DEFAULT_PLAYLIST_NAME,
-    cover: first_song_id ? (getSongById(first_song_id)?.cover || null) : null,
+    cover: pl.first_song_id ? (getSongById(pl.first_song_id)?.cover || null) : null,
   }));
   res.json(rows);
 }));

@@ -136,6 +136,12 @@ export function PlaylistsGrid() {
 
   return (
     <>
+      <h2 className={styles.introTitle}>My Favorites</h2>
+      <p className={styles.introBody}>
+        Build your own mixes from any album or straight from the player — name them, play them, and
+        keep them saved to your account.
+      </p>
+
       <div className={styles.sectionHead}>
         <h2 className={styles.sectionTitle}>My Playlists</h2>
         {lists && <span className={styles.sectionCount}>{lists.length}</span>}
@@ -175,7 +181,11 @@ export function PlaylistsGrid() {
 
       {lists && lists.length > 0 && (
         <div className={styles.grid}>
-          {lists.map((p) => (
+          {lists.map((p) => {
+            // The API sends cover: null (it reads a manifest we don't have), so
+            // fall back to the album art of the playlist's first track.
+            const cover = p.cover ?? (p.first_song_id ? bySongId.get(p.first_song_id)?.album.art ?? null : null);
+            return (
             <div key={p.id} className={styles.card}>
               <button
                 type="button"
@@ -183,9 +193,9 @@ export function PlaylistsGrid() {
                 onClick={() => router.push(`/playlist?id=${p.id}`)}
                 aria-label={`Open ${p.name}`}
               >
-                {p.cover ? (
+                {cover ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img className={styles.artImg} src={p.cover} alt="" loading="lazy" />
+                  <img className={styles.artImg} src={cover} alt="" loading="lazy" />
                 ) : (
                   <svg className={styles.note} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                     <path d={NOTE} />
@@ -220,7 +230,8 @@ export function PlaylistsGrid() {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </>

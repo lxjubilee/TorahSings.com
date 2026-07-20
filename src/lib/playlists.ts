@@ -21,7 +21,13 @@ export interface UserPlaylist {
   /** True for the auto-provisioned "My Favorites" list. */
   is_default?: boolean;
   item_count?: number;
+  /** Null here — the API resolves it from the manifest, which we don't use. */
   cover?: string | null;
+  /**
+   * The playlist's first track, in position order. We derive the cover from it
+   * client-side by mapping it back to the catalog album it came from.
+   */
+  first_song_id?: string | null;
   created_at: string;
   updated_at: string;
 }
