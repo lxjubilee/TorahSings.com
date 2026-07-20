@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CatalogAlbumTile } from '@/components/home/CatalogAlbumTile';
-import { HoverPreviewProvider } from '@/components/home/HoverPreview';
+import Link from 'next/link';
+import { CelestialArt } from '@/components/system/CelestialArt';
+import { hasAudio } from '@/lib/angels';
 import { allCatalogAlbums } from '@/lib/catalog';
 import { albumUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
@@ -77,12 +78,24 @@ export function LikedGrid() {
   }
 
   return (
-    <HoverPreviewProvider>
-      <div className={styles.grid}>
-        {albums.map((a) => (
-          <CatalogAlbumTile key={a.code} album={a} />
-        ))}
-      </div>
-    </HoverPreviewProvider>
+    <div className={styles.grid}>
+      {albums.map((a) => (
+        <Link key={a.code} href={`/album/${a.code}`} className={styles.card}>
+          <div className={styles.art}>
+            {a.art ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img className={styles.artImg} src={a.art} alt="" loading="lazy" decoding="async" />
+            ) : (
+              <CelestialArt seed={a.code} hue={a.hue} topic={a.book} glyph={a.glyph} ratio="1 / 1" />
+            )}
+            <span className={styles.badge}>{hasAudio(a) ? 'Ready' : 'Coming soon'}</span>
+          </div>
+          <div className={styles.body}>
+            <h3 className={styles.name}>{a.title}</h3>
+            <p className={styles.desc}>{a.book}</p>
+          </div>
+        </Link>
+      ))}
+    </div>
   );
 }

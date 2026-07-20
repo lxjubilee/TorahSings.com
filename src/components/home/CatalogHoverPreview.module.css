@@ -78,15 +78,15 @@
   border-color: #fff;
 }
 
-/* Liked — filled gold thumb, like JubiLujah's active favorite. */
+/* Liked — solid white fill, black thumb: exactly JubiLujah's .nf-act.on. */
 .actOn {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: rgba(254, 202, 87, 0.16);
+  background: #fff;
+  color: #000;
+  border-color: #fff;
 }
 
 .actOn:hover {
-  border-color: var(--accent);
+  border-color: #fff;
 }
 
 .act:active {
