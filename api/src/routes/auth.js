@@ -12,7 +12,7 @@ import {
 } from '../auth/session.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { sendPasswordResetEmail, sendLoginVerificationEmail, sendSignupVerificationEmail } from '../services/email.js';
-import { syncPasswordToJI, provisionUserToJI } from '../services/jiSync.js';
+import { syncPasswordToJI } from '../services/jiSync.js';
 import { jiLogin, jiCheckEmail } from '../services/jiLogin.js';
 import { logger } from '../logger.js';
 
@@ -158,15 +158,19 @@ async function establishSessionFromJI(req, res, jiUser) {
   return { user, tokens };
 }
 
-// JI-delegation self-heal: a user who signed up ON Jubilujah exists locally but
-// was never provisioned into JubileeInspire, so JI rejects their sign-in with a
-// 401 even though their password is correct. When that happens, verify the
-// password against our LOCAL credential; if it matches, provision them into JI
-// now (the admin.provision scope is granted — see [[ji-password-sync-integration]])
-// using the plaintext in hand, then establish the session locally. Returns the
-// auth response object on success, or null to fall through to JI's original reply
-// (genuine bad password, account already on JI, JI unreachable, locked, etc.).
-async function selfHealJiLogin(req) {
+// Local fallback for a TorahSings-only account.
+//
+// Someone who signed up here exists in our identity tables but not in JI, so JI
+// answers their sign-in with a 401 even though the password is right. We verify
+// against our LOCAL credential and, if it matches, sign them in here.
+//
+// Deliberately NO provisioning into JI: an account created on TorahSings stays
+// on TorahSings until the visitor actually signs in AT JI. Pushing them on a
+// local login is what populated JI's directory with rows that then got deleted
+// and re-created. Returns the auth response on success, or null to fall through
+// to JI's original reply (bad password, account really is on JI, locked, or the
+// existence check was unavailable).
+async function localOnlyAccountLogin(req) {
   const emailNorm = req.body.email.toLowerCase();
   const r = await query(
     `SELECT u.id, u.email, u.display_name, u.locked_until, c.password_hash
@@ -176,27 +180,32 @@ async function selfHealJiLogin(req) {
     [emailNorm]
   );
   // No local password-capable account, or the password doesn't match -> this is a
-  // genuine JI auth failure, not an un-provisioned local signup.
+  // genuine JI auth failure, not a TorahSings-only account.
   if (!r.rowCount || !verifyPassword(req.body.password, r.rows[0].password_hash)) return null;
   const user = r.rows[0];
   if (user.locked_until && new Date(user.locked_until) > new Date()) return null;
 
-  const result = await provisionUserToJI({
-    email: user.email,
-    password: req.body.password,
-    displayName: user.display_name,
-    emailVerified: true,           // a local signup already proved the email via OTP
-  });
-  // Only a fresh create (201) means "JI didn't know them" -> safe to sign in. A
-  // 409 means the email already exists on JI, so JI's 401 was a real bad password;
-  // any other failure means JI is unavailable. Both fall through to JI's reply.
-  if (!result.ok) {
-    logger.warn({ email: emailNorm, result }, 'JI self-provision did not create the account');
+  // We do NOT provision into JI here. A TorahSings-only account stays local until
+  // the visitor actually tries to sign in AT JI — pushing them on a TorahSings
+  // login is what filled JI's directory with rows nobody asked for.
+  //
+  // But JI's 401 is ambiguous: it means either "I don't know this email" or "I
+  // know it and that password is wrong". Signing in locally on the second case
+  // would let a stale local password override JI's authority. check-email
+  // resolves it, and fails CLOSED — if JI is unreachable or unsure we relay its
+  // original 401 rather than guess.
+  const ji = await jiCheckEmail(emailNorm);
+  if (ji.exists !== false) {
+    logger.info(
+      { email: emailNorm, jiExists: ji.exists ?? 'unknown' },
+      'JI 401 with the account present (or check unavailable) — relaying JI’s reply',
+    );
     return null;
   }
-  await writeAudit(null, user.id, 'account.ji_self_provisioned', { via: 'signin_migration' });
+
+  await writeAudit(null, user.id, 'account.local_only_signin', { via: 'ji_unknown_email' });
   const tokens = await finalizeLogin(user, { extended: !!req.body.rememberMe });
-  logger.info({ userId: user.id }, 'Local signup migrated into JI on first sign-in');
+  logger.info({ userId: user.id }, 'TorahSings-only account signed in locally (not provisioned to JI)');
   return {
     success: true,
     user: { id: user.id, email: user.email, displayName: user.display_name },
@@ -419,7 +428,7 @@ router.post('/signin', validate(signinSchema), ah(async (req, res) => {
     // try to migrate it into JI and sign in. (Skipped on the 2FA re-submit, which
     // carries a verificationCode and means JI already knows the account.)
     if (status === 401 && !verificationCode) {
-      const healed = await selfHealJiLogin(req);
+      const healed = await localOnlyAccountLogin(req);
       if (healed) return res.json(healed);
     }
     return relayJI(req, res, status, body, 'Sign in failed');
