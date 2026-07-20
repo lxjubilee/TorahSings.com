@@ -186,26 +186,22 @@ async function localOnlyAccountLogin(req) {
   if (user.locked_until && new Date(user.locked_until) > new Date()) return null;
 
   // We do NOT provision into JI here. A TorahSings-only account stays local until
-  // the visitor actually tries to sign in AT JI — pushing them on a TorahSings
-  // login is what filled JI's directory with rows nobody asked for.
+  // the visitor actually signs in AT JI.
   //
-  // But JI's 401 is ambiguous: it means either "I don't know this email" or "I
-  // know it and that password is wrong". Signing in locally on the second case
-  // would let a stale local password override JI's authority. check-email
-  // resolves it, and fails CLOSED — if JI is unreachable or unsure we relay its
-  // original 401 rather than guess.
-  const ji = await jiCheckEmail(emailNorm);
-  if (ji.exists !== false) {
-    logger.info(
-      { email: emailNorm, jiExists: ji.exists ?? 'unknown' },
-      'JI 401 with the account present (or check unavailable) — relaying JI’s reply',
-    );
-    return null;
-  }
-
-  await writeAudit(null, user.id, 'account.local_only_signin', { via: 'ji_unknown_email' });
+  // The local credential is authoritative for signing in HERE. We deliberately do
+  // NOT gate this on JI's check-email: that endpoint reports deleted accounts as
+  // still existing (verified against JI prod — an account deleted there still
+  // answers {"exists":true}), so trusting it locked out every user whose JI
+  // account had been removed, even with a correct local password.
+  //
+  // Accepted trade-off: if someone changes their password directly AT JI, their
+  // previous TorahSings password keeps working here until their next successful
+  // JI login refreshes the local hash (establishSessionFromJI re-hashes on every
+  // JI-verified sign-in). That narrow window is preferable to rejecting valid
+  // local accounts outright.
+  await writeAudit(null, user.id, 'account.local_credential_signin', { via: 'ji_rejected' });
   const tokens = await finalizeLogin(user, { extended: !!req.body.rememberMe });
-  logger.info({ userId: user.id }, 'TorahSings-only account signed in locally (not provisioned to JI)');
+  logger.info({ userId: user.id }, 'JI rejected; signed in on the local credential (nothing written to JI)');
   return {
     success: true,
     user: { id: user.id, email: user.email, displayName: user.display_name },

@@ -182,6 +182,9 @@ function AccountMenu({ name, email, onSignOut }: { name: string; email: string; 
             <Link href="/liked" className={styles.menuItem} role="menuitem" onClick={() => setOpen(false)}>
               Liked albums
             </Link>
+            <Link href="/playlists" className={styles.menuItem} role="menuitem" onClick={() => setOpen(false)}>
+              Playlists
+            </Link>
             <Link href="/membership" className={styles.menuItem} role="menuitem" onClick={() => setOpen(false)}>
               My subscription
             </Link>

@@ -19,6 +19,7 @@ import {
   type Target,
   type TargetType,
 } from '@/lib/reviews';
+import { AddToPlaylist } from './AddToPlaylist';
 import { SongRating } from './SongRating';
 import styles from './CatalogAlbumDetail.module.css';
 
@@ -89,7 +90,6 @@ export function CatalogAlbumDetail({
   const playable = hasAudio(album);
   const queue = albumPlayables(album);
 
-  const [saved, setSaved] = useState(false);
   const [following, setFollowing] = useState(false);
 
   // Account-backed like, from the shared store — stays in sync with the
@@ -256,14 +256,13 @@ export function CatalogAlbumDetail({
               <Icon d={albumPlaying ? ICON.pause : ICON.play} />
             </button>
 
-            <button
-              type="button"
-              className={`${styles.addpl} ${saved ? styles.addplOn : ''}`}
-              onClick={() => setSaved((s) => !s)}
-              aria-pressed={saved}
-            >
-              {saved ? 'Added to Playlist' : 'Add to Playlist'}
-            </button>
+            <AddToPlaylist getSongIds={() => album.tracks.map((t) => songUuid(album.code, t.n))}>
+              {(openMenu) => (
+                <button type="button" className={styles.addpl} onClick={openMenu}>
+                  Add to Playlist
+                </button>
+              )}
+            </AddToPlaylist>
 
             <button
               type="button"

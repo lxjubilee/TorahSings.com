@@ -41,7 +41,7 @@ async function send({ to, subject, text, html }) {
       // These are transactional security emails (reset link / OTP). Disable
       // SendGrid click tracking so it doesn't rewrite our links through the
       // account's branded-link domain (url####.jubileeinspire.com) — that
-      // both hides the real jubilujah.com URL and routes the one-time reset
+      // both hides the real torahsings.com URL and routes the one-time reset
       // token through SendGrid's redirector. Open tracking pixel off too.
       trackingSettings: {
         clickTracking: { enable: false, enableText: false },
@@ -78,10 +78,10 @@ function emailShell(preheader, bodyRows) {
     <tr><td align="center" style="padding:28px 12px;">
       <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="width:560px; max-width:560px; background:#ffffff; border:1px solid #e6e4df; border-radius:14px; overflow:hidden;">
         <tr><td style="height:5px; background:${GOLD}; font-size:0; line-height:0;">&nbsp;</td></tr>
-        <tr><td align="center" style="padding:30px 32px 4px; font-family:Georgia,'Times New Roman',serif; font-size:25px; font-weight:bold; color:${INK};">Jubilujah<span style="color:${GOLD};">.com</span></td></tr>
+        <tr><td align="center" style="padding:30px 32px 4px; font-family:Georgia,'Times New Roman',serif; font-size:25px; font-weight:bold; color:${INK};">TorahSings<span style="color:${GOLD};">.com</span></td></tr>
         ${bodyRows}
         <tr><td style="padding:22px 32px 0;"><div style="border-top:1px solid #eceae5; font-size:0; line-height:0;">&nbsp;</div></td></tr>
-        <tr><td align="center" style="padding:16px 32px 30px; font-family:Arial,Helvetica,sans-serif; font-size:12px; line-height:1.6; color:#a7a49c;">&copy; 2026 Jubilujah.com &middot; Feel the Spirit Move<br>This is an automated message — please don't reply.</td></tr>
+        <tr><td align="center" style="padding:16px 32px 30px; font-family:Arial,Helvetica,sans-serif; font-size:12px; line-height:1.6; color:#a7a49c;">&copy; 2026 TorahSings.com &middot; The stars sang. The angels sang.<br>This is an automated message — please don't reply.</td></tr>
       </table>
     </td></tr>
   </table>
@@ -121,16 +121,16 @@ function noteRow(text) {
 // Auth emails
 // ---------------------------------------------------------------------------
 export async function sendLoginVerificationEmail({ to, code }) {
-  const subject = 'Your Jubilujah.com sign-in code';
+  const subject = 'Your TorahSings.com sign-in code';
   const text =
-    `Your Jubilujah.com sign-in code is: ${code}\n\n` +
+    `Your TorahSings.com sign-in code is: ${code}\n\n` +
     `Enter it to finish signing in. This code expires in 15 minutes.\n\n` +
     `If you didn't try to sign in, you can ignore this email — your account is safe.\n\n` +
-    `— Jubilujah.com`;
+    `— TorahSings.com`;
   const html = emailShell(
     `Your sign-in code is ${code} — expires in 15 minutes.`,
     headingRow('Your sign-in code') +
-    introRow('Use the code below to finish signing in to your Jubilujah.com account.') +
+    introRow('Use the code below to finish signing in to your TorahSings.com account.') +
     codeRow(code) +
     expiryRow('This code expires in 15 minutes.') +
     noteRow("Didn't try to sign in? You can safely ignore this email — your account stays secure and no changes are made.")
@@ -139,17 +139,17 @@ export async function sendLoginVerificationEmail({ to, code }) {
 }
 
 export async function sendSignupVerificationEmail({ to, code }) {
-  const subject = 'Verify your email for Jubilujah.com';
+  const subject = 'Verify your email for TorahSings.com';
   const text =
-    `Welcome to Jubilujah.com!\n\n` +
+    `Welcome to TorahSings.com!\n\n` +
     `Your email verification code is: ${code}\n\n` +
     `Enter it to verify your email and finish creating your account. This code expires in 30 minutes.\n\n` +
-    `If you didn't sign up for Jubilujah.com, you can safely ignore this email — no account will be created.\n\n` +
-    `— Jubilujah.com`;
+    `If you didn't sign up for TorahSings.com, you can safely ignore this email — no account will be created.\n\n` +
+    `— TorahSings.com`;
   const html = emailShell(
     `Welcome! Your verification code is ${code} — expires in 30 minutes.`,
     headingRow('Confirm your email address') +
-    introRow('Welcome to Jubilujah.com! Enter the code below to verify your email and finish creating your account.') +
+    introRow('Welcome to TorahSings.com! Enter the code below to verify your email and finish creating your account.') +
     codeRow(code) +
     expiryRow('This code expires in 30 minutes.') +
     noteRow("Didn't sign up? You can safely ignore this email — without this code, no account will be created.")
@@ -181,7 +181,7 @@ export async function sendSubscriptionEmail({ to, subject, heading, intro, rows 
   const text =
     `${heading}\n\n${intro}\n\n${textRows ? textRows + '\n\n' : ''}` +
     `${ctaUrl ? `${ctaLabel || 'Manage subscription'}: ${ctaUrl}\n\n` : ''}` +
-    `${note ? note + '\n\n' : ''}— Jubilujah.com`;
+    `${note ? note + '\n\n' : ''}— TorahSings.com`;
   const html = emailShell(
     intro,
     headingRow(heading) +
@@ -195,16 +195,16 @@ export async function sendSubscriptionEmail({ to, subject, heading, intro, rows 
 
 export async function sendPasswordResetEmail({ to, resetUrl }) {
   const mins = config.email.resetTtlMinutes;
-  const subject = 'Reset your Jubilujah.com password';
+  const subject = 'Reset your TorahSings.com password';
   const text =
-    `We received a request to reset the password for your Jubilujah.com account.\n\n` +
+    `We received a request to reset the password for your TorahSings.com account.\n\n` +
     `Reset it here (this link expires in ${mins} minutes):\n${resetUrl}\n\n` +
     `If you didn't request this, you can safely ignore this email — your password won't change.\n\n` +
-    `— Jubilujah.com`;
+    `— TorahSings.com`;
   const html = emailShell(
-    `Reset your Jubilujah.com password — link expires in ${mins} minutes.`,
+    `Reset your TorahSings.com password — link expires in ${mins} minutes.`,
     headingRow('Reset your password') +
-    introRow('We received a request to reset the password for your Jubilujah.com account. Click the button below to choose a new one.') +
+    introRow('We received a request to reset the password for your TorahSings.com account. Click the button below to choose a new one.') +
     buttonRow('Reset password', resetUrl) +
     expiryRow(`This link expires in ${mins} minutes and can be used once.`) +
     fallbackLinkRow(resetUrl) +

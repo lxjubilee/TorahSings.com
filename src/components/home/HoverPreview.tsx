@@ -16,7 +16,8 @@ import { useAudioActions } from '@/components/audio/AudioProvider';
 import { CelestialArt } from '@/components/system/CelestialArt';
 import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
 import { showAuthGate } from '@/lib/auth-gate';
-import { albumUuid } from '@/lib/ids';
+import { albumUuid, songUuid } from '@/lib/ids';
+import { AddToPlaylist } from '@/components/album/AddToPlaylist';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import { ensureLikesLoaded, likeKey, resetLikes, toggleLikeStored, useLikedSet } from '@/lib/likes';
 import styles from './CatalogHoverPreview.module.css';
@@ -156,6 +157,8 @@ function PreviewCard({
   const { album, rect } = active;
   const { startAlbum } = useAudioActions();
   const { session } = useJubileeAccount();
+  // True while the add-to-playlist menu is open — see onMouseLeave below.
+  const [menuOpen, setMenuOpen] = useState(false);
   const playable = hasAudio(album);
 
   // Account-backed like, from the shared store so it stays in sync with the
@@ -200,7 +203,12 @@ function PreviewCard({
       className={styles.preview}
       style={{ left, top, width }}
       onMouseEnter={onEnter}
-      onMouseLeave={onLeave}
+      // The add-to-playlist menu opens BELOW the card, so moving the mouse to it
+      // leaves the card's bounds. Hold the card open while that menu is up,
+      // otherwise the card unmounts and takes the menu with it.
+      onMouseLeave={() => {
+        if (!menuOpen) onLeave();
+      }}
       role="dialog"
       aria-label={album.title}
     >
@@ -232,9 +240,25 @@ function PreviewCard({
             <Icon d={ICON.play} />
           </button>
 
-          <button type="button" className={styles.act} aria-label="Add to My List">
-            <Icon d={ICON.add} />
-          </button>
+          <AddToPlaylist
+            getSongIds={() => album.tracks.map((t) => songUuid(album.code, t.n))}
+            onOpenChange={setMenuOpen}
+          >
+            {(openMenu) => (
+              <button
+                type="button"
+                className={styles.act}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openMenu();
+                }}
+                aria-label="Add album to playlist"
+              >
+                <Icon d={ICON.add} />
+              </button>
+            )}
+          </AddToPlaylist>
 
           <button
             type="button"

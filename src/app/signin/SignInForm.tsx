@@ -149,6 +149,8 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
   const [locked, setLocked] = useState(false);
 
   const returnTo = '/account';
+  /** Where a freshly created account lands (sign-in still goes to /account). */
+  const AFTER_SIGNUP = '/';
 
   // Resend cooldown ticker.
   useEffect(() => {
@@ -381,7 +383,9 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
         rememberMe,
       });
       setTokens(res?.tokens);
-      window.location.assign(returnTo);
+      // A brand-new account lands on the home page — there is nothing to manage
+      // in /account yet, and the library is the point of the site.
+      window.location.assign(AFTER_SIGNUP);
     } catch (e) {
       // 429 (attempts spent) and 409 (email claimed meanwhile) both kill this
       // pending sign-up — send them back to the form rather than let them retype
