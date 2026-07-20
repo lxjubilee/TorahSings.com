@@ -11,6 +11,7 @@ const NAV = [
   { href: '/', label: 'Torah Sings' },
   { href: '/hebraic-christianity', label: 'Hebraic Christianity' },
   { href: '/learn-hebrew', label: 'Learn Hebrew' },
+  { href: '/playlists', label: 'Playlists' },
   { href: '/membership', label: 'Membership' },
 ] as const;
 

@@ -7,12 +7,14 @@
   display: inline-flex;
 }
 
+/* Portalled to <body> and positioned from the trigger's rect, so the
+   hover-preview card's `overflow: hidden` cannot clip it. */
 .menu {
-  position: absolute;
-  top: calc(100% + 10px);
-  left: 50%;
+  position: fixed;
   transform: translateX(-50%);
-  z-index: 60;
+  /* Above the hover-preview card (z-index 1500), which it can overlap when the
+     card sits low enough that the menu has to flip upwards. */
+  z-index: 1600;
   width: 340px;
   max-width: min(340px, 90vw);
   padding: 16px 0 12px;

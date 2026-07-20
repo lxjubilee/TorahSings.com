@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { showAuthGate } from '@/lib/auth-gate';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import {
@@ -39,17 +40,37 @@ export function AddToPlaylist({
   const [done, setDone] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // Anchor coordinates for the portalled menu (see the portal note below).
+  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
 
   const setOpenState = (v: boolean) => {
     setOpen(v);
     onOpenChange?.(v);
+    if (v && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      // Clamp into the viewport: the menu is centred on the trigger, so a tile
+      // near either edge would otherwise push it off-screen. Flip above the
+      // trigger when there isn't room below.
+      const W = 340;
+      const H = 330; // approx; only used to decide above/below
+      const M = 12;
+      const half = W / 2;
+      const left = Math.min(Math.max(r.left + r.width / 2, half + M), window.innerWidth - half - M);
+      const below = r.bottom + 10;
+      const top = below + H > window.innerHeight ? Math.max(M, r.top - H - 10) : below;
+      setAnchor({ left, top });
+    }
   };
 
   // Close on an outside click.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpenState(false);
+      const t = e.target as Node;
+      // The menu is portalled to <body>, so it is NOT inside ref — check both.
+      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpenState(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenState(false);
@@ -126,8 +147,17 @@ export function AddToPlaylist({
     <div className={styles.wrap} ref={ref}>
       {children(trigger)}
 
-      {open && session && (
-        <div className={styles.menu} role="dialog" aria-label="Add album to playlist">
+      {/* Portalled to <body>: the hover-preview card is `overflow: hidden`, so a
+          menu rendered inside it gets clipped (it extends past the card). Fixed
+          coordinates come from the trigger's rect, captured when it opens. */}
+      {open && session && anchor && createPortal(
+        <div
+          ref={menuRef}
+          className={styles.menu}
+          style={{ left: anchor.left, top: anchor.top }}
+          role="dialog"
+          aria-label="Add album to playlist"
+        >
           <div className={styles.head}>Add album to playlist</div>
 
           {lists === null && <p className={styles.state}>Loading your playlists…</p>}
@@ -179,7 +209,8 @@ export function AddToPlaylist({
           )}
 
           {done && <p className={styles.done}>{done}</p>}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

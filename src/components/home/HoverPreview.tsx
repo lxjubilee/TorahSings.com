@@ -159,6 +159,12 @@ function PreviewCard({
   const { session } = useJubileeAccount();
   // True while the add-to-playlist menu is open — see onMouseLeave below.
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Hovering a different tile swaps the album in place. Drop the hold too,
+  // otherwise the card stays pinned open after its menu was remounted shut.
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [album.code]);
   const playable = hasAudio(album);
 
   // Account-backed like, from the shared store so it stays in sync with the
@@ -241,6 +247,9 @@ function PreviewCard({
           </button>
 
           <AddToPlaylist
+            // Remount when the hovered album changes: that closes an open menu,
+            // so it can never end up showing one album while adding another.
+            key={album.code}
             getSongIds={() => album.tracks.map((t) => songUuid(album.code, t.n))}
             onOpenChange={setMenuOpen}
           >
