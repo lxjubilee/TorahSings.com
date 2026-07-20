@@ -12,8 +12,9 @@ export const metadata: Metadata = {
 export default function PlaylistsPage() {
   return (
     <>
-      <PageHero eyebrow="Your mixes" title="Playlists">
-        Every playlist you build is saved to your Jubilee Account and travels with you.
+      <PageHero eyebrow="Your mixes" title="My Favorites">
+        Build your own mixes from any album or straight from the player — name them, play them, and
+        keep them saved to your account.
       </PageHero>
 
       <div className="wrap" style={{ paddingBottom: 72 }}>

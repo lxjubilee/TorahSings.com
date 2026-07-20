@@ -136,12 +136,6 @@ export function PlaylistsGrid() {
 
   return (
     <>
-      <h2 className={styles.introTitle}>My Favorites</h2>
-      <p className={styles.introBody}>
-        Build your own mixes from any album or straight from the player — name them, play them, and
-        keep them saved to your account.
-      </p>
-
       <div className={styles.sectionHead}>
         <h2 className={styles.sectionTitle}>My Playlists</h2>
         {lists && <span className={styles.sectionCount}>{lists.length}</span>}
