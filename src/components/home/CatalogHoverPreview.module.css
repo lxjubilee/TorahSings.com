@@ -78,6 +78,17 @@
   border-color: #fff;
 }
 
+/* Liked — filled gold thumb, like JubiLujah's active favorite. */
+.actOn {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(254, 202, 87, 0.16);
+}
+
+.actOn:hover {
+  border-color: var(--accent);
+}
+
 .act:active {
   transform: scale(0.92);
 }

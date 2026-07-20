@@ -5,6 +5,7 @@ import { AudioProvider } from '@/components/audio/AudioProvider';
 import { NowPlayingBar } from '@/components/audio/NowPlayingBar';
 import { IntroModal } from '@/components/intro/IntroModal';
 import { IntroProvider } from '@/components/intro/IntroProvider';
+import { AuthGate } from '@/components/gating/AuthGate';
 import { SiteFooter } from '@/components/layout/SiteFooter';
 import { SiteHeader } from '@/components/layout/SiteHeader';
 import { Particles } from '@/components/system/Particles';
@@ -66,6 +67,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <SiteFooter />
               <NowPlayingBar />
               <IntroModal />
+              <AuthGate />
             </IntroProvider>
           </AudioProvider>
         </JubileeAccountProvider>

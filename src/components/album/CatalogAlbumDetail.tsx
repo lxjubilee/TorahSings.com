@@ -9,8 +9,8 @@ import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
 import { ApiError } from '@/lib/api';
 import { albumUuid, songUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
-import { likeKey, likeTarget, listLikeIds, unlikeTarget } from '@/lib/likes';
-import { SignInGate } from '@/components/gating/SignInGate';
+import { showAuthGate } from '@/lib/auth-gate';
+import { ensureLikesLoaded, likeKey, resetLikes, toggleLikeStored, useLikedSet } from '@/lib/likes';
 import {
   batchSummaries,
   summaryKey,
@@ -92,47 +92,22 @@ export function CatalogAlbumDetail({
   const [saved, setSaved] = useState(false);
   const [following, setFollowing] = useState(false);
 
-  // Account-backed like. Guests get the sign-in gate instead of a silent no-op.
-  const [liked, setLiked] = useState(false);
-  const [likeBusy, setLikeBusy] = useState(false);
-  const [gateOpen, setGateOpen] = useState(false);
+  // Account-backed like, from the shared store — stays in sync with the
+  // hover-preview thumb and the Liked page. Guests get the global sign-in gate.
+  const likedSet = useLikedSet();
+  const liked = likedSet.has(likeKey('album', albumUuid(album.code)));
 
   useEffect(() => {
-    if (!session) {
-      setLiked(false);
-      return;
-    }
-    let cancelled = false;
-    listLikeIds()
-      .then((r) => {
-        if (!cancelled) setLiked(r.ids.includes(likeKey('album', albumUuid(album.code))));
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [session, album.code]);
+    if (session) ensureLikesLoaded();
+    else resetLikes();
+  }, [session]);
 
-  const toggleLike = async () => {
+  const toggleLike = () => {
     if (!session) {
-      setGateOpen(true);
+      showAuthGate();
       return;
     }
-    const id = albumUuid(album.code);
-    setLikeBusy(true);
-    try {
-      if (liked) {
-        await unlikeTarget('album', id);
-        setLiked(false);
-      } else {
-        await likeTarget('album', id);
-        setLiked(true);
-      }
-    } catch {
-      /* a failed toggle leaves the button as it was */
-    } finally {
-      setLikeBusy(false);
-    }
+    void toggleLikeStored('album', albumUuid(album.code));
   };
   const [added, setAdded] = useState<Set<number>>(new Set());
 
@@ -294,7 +269,6 @@ export function CatalogAlbumDetail({
               type="button"
               className={`${styles.follow} ${liked ? styles.likeOn : ''}`}
               onClick={toggleLike}
-              disabled={likeBusy}
               aria-pressed={liked}
               aria-label={liked ? 'Remove from liked' : 'Like this album'}
             >
@@ -400,8 +374,6 @@ export function CatalogAlbumDetail({
             />
           );
         })()}
-
-      {gateOpen && <SignInGate onClose={() => setGateOpen(false)} />}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { HoverPreviewProvider } from '@/components/home/HoverPreview';
 import { allCatalogAlbums } from '@/lib/catalog';
 import { albumUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
-import { likeKey, listLikeIds } from '@/lib/likes';
+import { ensureLikesLoaded, likeKey, resetLikes, useLikedSet } from '@/lib/likes';
 import styles from './LikedGrid.module.css';
 
 /**
@@ -20,7 +20,8 @@ import styles from './LikedGrid.module.css';
  */
 export function LikedGrid() {
   const { session, status, signIn } = useJubileeAccount();
-  const [likedIds, setLikedIds] = useState<Set<string> | null>(null);
+  const likedSet = useLikedSet();
+  const [loading, setLoading] = useState(true);
 
   // A stable index of every album by its derived like-key.
   const byKey = useMemo(() => {
@@ -31,20 +32,12 @@ export function LikedGrid() {
 
   useEffect(() => {
     if (!session) {
-      setLikedIds(null);
+      resetLikes();
+      setLoading(false);
       return;
     }
-    let cancelled = false;
-    listLikeIds()
-      .then((r) => {
-        if (!cancelled) setLikedIds(new Set(r.ids));
-      })
-      .catch(() => {
-        if (!cancelled) setLikedIds(new Set());
-      });
-    return () => {
-      cancelled = true;
-    };
+    setLoading(true);
+    ensureLikesLoaded().finally(() => setLoading(false));
   }, [session]);
 
   if (status === 'loading') {
@@ -66,11 +59,11 @@ export function LikedGrid() {
     );
   }
 
-  if (likedIds === null) {
+  if (loading) {
     return <p className={styles.loading}>Loading your liked albums…</p>;
   }
 
-  const albums = [...likedIds].map((k) => byKey.get(k)).filter((a): a is NonNullable<typeof a> => Boolean(a));
+  const albums = [...likedSet].map((k) => byKey.get(k)).filter((a): a is NonNullable<typeof a> => Boolean(a));
 
   if (albums.length === 0) {
     return (

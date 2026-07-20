@@ -15,6 +15,10 @@ import Link from 'next/link';
 import { useAudioActions } from '@/components/audio/AudioProvider';
 import { CelestialArt } from '@/components/system/CelestialArt';
 import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
+import { showAuthGate } from '@/lib/auth-gate';
+import { albumUuid } from '@/lib/ids';
+import { useJubileeAccount } from '@/lib/jubilee-account';
+import { ensureLikesLoaded, likeKey, resetLikes, toggleLikeStored, useLikedSet } from '@/lib/likes';
 import styles from './CatalogHoverPreview.module.css';
 
 /**
@@ -151,7 +155,30 @@ function PreviewCard({
 }) {
   const { album, rect } = active;
   const { startAlbum } = useAudioActions();
+  const { session } = useJubileeAccount();
   const playable = hasAudio(album);
+
+  // Account-backed like, from the shared store so it stays in sync with the
+  // album-detail heart and the Liked page.
+  const likedSet = useLikedSet();
+  const albumId = albumUuid(album.code);
+  const liked = likedSet.has(likeKey('album', albumId));
+
+  useEffect(() => {
+    if (session) ensureLikesLoaded();
+    else resetLikes();
+  }, [session]);
+
+  // Guests get the global sign-in gate (which outlives this card's unmount).
+  const onLike = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!session) {
+      showAuthGate();
+      return;
+    }
+    void toggleLikeStored('album', albumId);
+  };
 
   // Grow the card beyond the tile and centre it on the tile, clamped to the
   // viewport. Sizing matches JubiLujah's nf-preview exactly: 1.55× the tile
@@ -209,7 +236,13 @@ function PreviewCard({
             <Icon d={ICON.add} />
           </button>
 
-          <button type="button" className={styles.act} aria-label="Like">
+          <button
+            type="button"
+            className={`${styles.act} ${liked ? styles.actOn : ''}`}
+            onClick={onLike}
+            aria-pressed={liked}
+            aria-label={liked ? 'Liked' : 'Like'}
+          >
             <Icon d={ICON.thumb} />
           </button>
 
