@@ -31,7 +31,7 @@
  *   node scripts/local-auth-server.mjs            # listens on :4031
  *   PORT=4055 node scripts/local-auth-server.mjs
  *
- * Then point the web at it (.env.local):
+ * Then point the web at it (.env):
  *   NEXT_PUBLIC_API_BASE=http://localhost:4031
  * and `npm run dev`. next.config.mjs rewrites /api/* here, so the browser stays
  * same-origin and no CORS is involved.
@@ -817,7 +817,7 @@ server.listen(PORT, () => {
   console.log(`   accounts  : ${n}`);
   console.log('   kdf/token : imported from api/src/auth (production format)');
   console.log('');
-  console.log('   Point the web at it in .env.local:');
+  console.log('   Point the web at it in .env:');
   console.log(`     NEXT_PUBLIC_API_BASE=http://localhost:${PORT}`);
   console.log('');
   console.log('   Sign-up codes are printed here instead of emailed.');
