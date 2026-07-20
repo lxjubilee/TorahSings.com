@@ -30,9 +30,13 @@ export interface PlaylistItem {
   id: string;
   song_id: string;
   position: number;
+  /** Resolved server-side by joining catalog.songs/albums/artists. */
   song_title?: string;
   album_title?: string;
+  artist_name?: string;
+  /** Null here — the API resolves these from the manifest, which we don't use. */
   cover?: string | null;
+  url?: string | null;
 }
 
 export interface PlaylistDetail extends UserPlaylist {

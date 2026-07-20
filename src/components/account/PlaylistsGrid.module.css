@@ -1,5 +1,131 @@
 /* Same card language as the Liked page (JubiLujah's plx-grid / plx-card). */
 
+/* ---- section head + inline create form (JubiLujah's plx-section-head) ---- */
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 18px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sectionCount {
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--ink-body);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.createRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.field {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.field::placeholder {
+  color: var(--ink-faint);
+}
+
+.create {
+  padding: 12px 22px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent-rose);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.create:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.create:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.err {
+  margin: -12px 0 18px;
+  color: var(--accent-peach);
+  font-size: 13px;
+}
+
+.emptyNote {
+  color: var(--ink-muted);
+  font-size: 14px;
+  padding: 10px 0 30px;
+}
+
+/* ---- card actions ---- */
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.play {
+  padding: 7px 14px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent-rose);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.play:hover {
+  filter: brightness(1.07);
+}
+
+.ghost {
+  padding: 7px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-body);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ghost:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -29,7 +155,11 @@
   display: grid;
   place-items: center;
   overflow: hidden;
+  /* It's a button (opens the playlist) — strip the UA chrome. */
+  padding: 0;
+  border: 0;
   background: var(--bg-card);
+  cursor: pointer;
 }
 
 .artImg {
