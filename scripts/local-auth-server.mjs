@@ -584,6 +584,24 @@ const routes = {
     return { status: 200, body: { ok: true } };
   },
 
+  /**
+   * Delete the caller's own account. Mirrors the real API's DELETE
+   * /api/auth/account -> purgeUserAccount: a LOCAL teardown only. There is no JI
+   * call here (nor in prod's purge), so deleting on TorahSings never touches the
+   * shared Jubilee Account or any other site. credentials / user_roles /
+   * refresh_tokens cascade off users via ON DELETE CASCADE; reviews and pending
+   * signups are removed explicitly.
+   */
+  'DELETE /api/auth/account': (_body, req) => {
+    const user = requireUser(req);
+    db.prepare('DELETE FROM reviews WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id); // cascades credentials/roles/tokens
+    db.prepare('DELETE FROM signup_verifications WHERE email = ?').run(user.email);
+    audit(user.id, 'account.deleted', { via: 'self_service' });
+    console.log(`  🗑  account deleted: ${user.email}`);
+    return { status: 200, body: { ok: true } };
+  },
+
   // ---- Reviews: fixed paths (these must win over the /:type/:id patterns) ----
 
   /** Batch summaries for an album + its songs in one round-trip. Public. */

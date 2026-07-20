@@ -57,6 +57,18 @@ async function getToken(forceRefresh = false) {
   return fetchToken();
 }
 
+/**
+ * The client-credentials Bearer, for other JI callers that need one (the signup
+ * check-email guard in jiLogin.js). Shares this module's cache, so a token is
+ * minted once and reused across syncs, provisions and check-email alike.
+ * Throws on a token failure; callers decide whether that is fatal.
+ * `forceRefresh` re-mints after a 401.
+ */
+export function getServiceToken(forceRefresh = false) {
+  if (!jiSyncEnabled()) throw new Error('JI service credentials are not configured');
+  return getToken(forceRefresh);
+}
+
 async function postSetPassword(token, email, newPassword) {
   return fetch(`${config.jiSync.baseUrl}${SET_PASSWORD_PATH}`, {
     method: 'POST',

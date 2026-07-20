@@ -59,6 +59,13 @@ interface JubileeContextValue {
   isStub: boolean;
   signIn: () => void;
   signOut: () => void;
+  /**
+   * Permanently delete THIS site's account (DELETE /api/auth/account). Local to
+   * TorahSings only — it never calls JubileeInspire, so the shared Jubilee
+   * Account and every other site keep working. Rejects on failure (the caller
+   * surfaces it); clears the session only on success.
+   */
+  deleteAccount: () => Promise<void>;
   /** Begins checkout. Against real SSO this hands off to Jubilee billing. */
   subscribe: () => void;
   /** Buys the book on its own. Null when no billing endpoint is configured. */
@@ -154,6 +161,18 @@ export function JubileeAccountProvider({ children }: { children: ReactNode }) {
     window.location.assign('/');
   }, []);
 
+  const deleteAccount = useCallback(async () => {
+    // Deletes ONLY the local TorahSings account (server-side purgeUserAccount).
+    // No JubileeInspire call is made, by design — the shared Jubilee Account and
+    // other platforms are untouched. Unlike signOut this is NOT best-effort: if
+    // the request fails we throw and keep the session, so the user isn't told
+    // their account is gone when it isn't. Redirect is left to the caller.
+    await api.del('/api/auth/account');
+    clearTokens();
+    setSimulatedSubscription(false);
+    setSession(null);
+  }, []);
+
   /** Simulated until the subscriptions router is mounted — see the file header. */
   const subscribe = useCallback(() => {
     setSimulatedSubscription(true);
@@ -175,10 +194,11 @@ export function JubileeAccountProvider({ children }: { children: ReactNode }) {
       isStub,
       signIn,
       signOut,
+      deleteAccount,
       subscribe,
       purchaseBook,
     }),
-    [session, status, isStub, signIn, signOut, subscribe, purchaseBook],
+    [session, status, isStub, signIn, signOut, deleteAccount, subscribe, purchaseBook],
   );
 
   return <JubileeContext.Provider value={value}>{children}</JubileeContext.Provider>;

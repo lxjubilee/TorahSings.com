@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { ALEPH_BET, MODES, degreeOf } from '@/lib/derivation';
 import { YEARLY_PRICE_LABEL } from '@/lib/format';
+import { ApiError } from '@/lib/api';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import {
   getContributions,
@@ -18,17 +19,15 @@ import styles from './AccountPanel.module.css';
  * The account console, in JubiLujah's /account design.
  *
  * ────────────────────────────────────────────────────────────────────────────
- * PRESENTATION ONLY, FOR NOW
+ * "Delete account" is LIVE: it calls DELETE /api/auth/account (deleteAccount in
+ * jubilee-account.tsx → server-side purgeUserAccount). That teardown is local to
+ * TorahSings only — it never calls JubileeInspire, so the shared Jubilee Account
+ * and other sites are untouched.
  *
- * "Change password" and "Delete account" are laid out and behave locally, but
- * NOTHING is wired to a server — the Jubilee Account is still the browser stub,
- * so there is no password to change and no account to delete. Submitting either
- * one says so out loud rather than pretending to work.
- *
- * When auth is wired up, they map onto endpoints torahsings-api already serves:
- *   change password → POST   /api/auth/change-password  { current_password, new_password, refreshToken? }
- *   delete account  → DELETE /api/auth/account
- * See docs/API.md §7.2. At that point delete the PENDING_NOTICE paths below.
+ * "Change password" is still PRESENTATION ONLY: it validates locally and stops
+ * (PENDING_NOTICE) rather than pretending to work. Wire it to
+ *   POST /api/auth/change-password  { current_password, new_password, refreshToken? }
+ * (docs/API.md §7.2) to finish it, then drop PENDING_NOTICE.
  * ────────────────────────────────────────────────────────────────────────────
  */
 
@@ -48,6 +47,12 @@ const CONTRIB_ROWS: Array<{ label: string; key: keyof Contributions }> = [
 ];
 
 type MyReviewRow = MyReview & { target_type: TargetType; target_id: string };
+
+/** "July 2026" — the reviews list dates to the month, not the day. */
+function monthYear(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
 
 const EYE =
   'M12 4.5C7 4.5 2.7 7.6 1 12c1.7 4.4 6 7.5 11 7.5s9.3-3.1 11-7.5C21.3 7.6 17 4.5 12 4.5zm0 12.5a5 5 0 110-10 5 5 0 010 10zm0-8a3 3 0 100 6 3 3 0 000-6z';
@@ -100,7 +105,7 @@ function downloadLetterTable() {
 }
 
 export function AccountPanel() {
-  const { session, status, entitlement, isStub, signIn, signOut, subscribe } = useJubileeAccount();
+  const { session, status, entitlement, isStub, signIn, signOut, subscribe, deleteAccount } = useJubileeAccount();
 
   // Change-password form — local state only (see the note at the top).
   const [current, setCurrent] = useState('');
@@ -112,9 +117,29 @@ export function AccountPanel() {
   const [pwErr, setPwErr] = useState<string | null>(null);
   const [pwNote, setPwNote] = useState<string | null>(null);
 
-  // Delete-account — local state only.
+  // Delete-account.
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [delNote, setDelNote] = useState<string | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
+
+  const confirmDelete = async () => {
+    setDelBusy(true);
+    setDelErr(null);
+    try {
+      await deleteAccount();
+      // Gone. Leave the account area for the public home.
+      window.location.assign('/');
+    } catch (e) {
+      setDelBusy(false);
+      setDelErr(
+        e instanceof ApiError && e.status === 401
+          ? 'Your session expired. Please sign in again, then retry.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Could not delete your account. Please try again.',
+      );
+    }
+  };
 
   // My Contributions — live from the reviews API, refetched whenever the page
   // mounts, so a rating made on an album shows up on the next visit here.
@@ -414,17 +439,29 @@ export function AccountPanel() {
             <ul className={styles.reviewList}>
               {myReviews.map((r) => (
                 <li className={styles.reviewRow} key={r.id}>
-                  <div className={styles.reviewMeta}>
+                  <div className={styles.reviewTop}>
                     <span className={styles.reviewStars} aria-label={`${r.stars} out of 5 stars`}>
                       {'★'.repeat(r.stars)}
                       <span className={styles.reviewStarsOff}>{'★'.repeat(5 - r.stars)}</span>
                     </span>
-                    <span className={styles.reviewTarget}>{r.target_type}</span>
-                    <span className={styles.reviewDate}>
-                      {new Date(r.created_at).toLocaleDateString()}
-                      {r.edited ? ' · edited' : ''}
+                    <span
+                      className={`${styles.reviewStatus} ${
+                        r.status === 'published' ? styles.reviewStatusOk : styles.reviewStatusHold
+                      }`}
+                    >
+                      {r.status}
                     </span>
                   </div>
+
+                  <div className={styles.reviewMeta}>
+                    <span className={styles.reviewType}>{r.target_type}</span>
+                    <span className={styles.reviewDot} aria-hidden="true">
+                      ·
+                    </span>
+                    <span className={styles.reviewDate}>{monthYear(r.created_at)}</span>
+                    {r.edited && <span className={styles.reviewDate}>· edited</span>}
+                  </div>
+
                   {r.body ? <p className={styles.reviewBody}>{r.body}</p> : null}
                 </li>
               ))}
@@ -449,19 +486,13 @@ export function AccountPanel() {
               type="button"
               className={`${styles.btn} ${styles.btnDanger}`}
               onClick={() => {
-                setDelNote(null);
+                setDelErr(null);
                 setConfirmOpen(true);
               }}
             >
               Delete account
             </button>
           </div>
-
-          {delNote && !confirmOpen && (
-            <p className={`${styles.msg} ${styles.msgOk}`} style={{ margin: '16px 0 0' }}>
-              {delNote}
-            </p>
-          )}
         </section>
 
         {isStub && <StubNotice />}
@@ -471,7 +502,7 @@ export function AccountPanel() {
         <div
           className={styles.overlay}
           onClick={(e) => {
-            if (e.target === e.currentTarget) setConfirmOpen(false);
+            if (!delBusy && e.target === e.currentTarget) setConfirmOpen(false);
           }}
         >
           <div className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="del-title">
@@ -479,22 +510,36 @@ export function AccountPanel() {
               Delete your account?
             </h3>
             <p className={styles.modalBody}>
-              This permanently deletes your account (<strong>{session.email}</strong>) and signs you out
-              everywhere. This cannot be undone.
+              This permanently deletes your <strong>TorahSings.com</strong> account (
+              <strong>{session.email}</strong>) and everything on it. It cannot be undone.
             </p>
+            <p className={styles.modalBody} style={{ marginTop: 10 }}>
+              Your Jubilee Account and any other Jubilee sites are <strong>not</strong> affected — this removes
+              you from TorahSings.com only.
+            </p>
+
+            {delErr && (
+              <p className={`${styles.msg} ${styles.msgErr}`} style={{ margin: '12px 0 0' }}>
+                {delErr}
+              </p>
+            )}
+
             <div className={styles.modalActions}>
-              <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={() => setConfirmOpen(false)}>
+              <button
+                type="button"
+                className={`${styles.btn} ${styles.btnGhost}`}
+                onClick={() => setConfirmOpen(false)}
+                disabled={delBusy}
+              >
                 Cancel
               </button>
               <button
                 type="button"
                 className={`${styles.btn} ${styles.btnDanger}`}
-                onClick={() => {
-                  setConfirmOpen(false);
-                  setDelNote(PENDING_NOTICE);
-                }}
+                onClick={confirmDelete}
+                disabled={delBusy}
               >
-                Yes, delete my account
+                {delBusy ? 'Deleting…' : 'Yes, delete my account'}
               </button>
             </div>
           </div>

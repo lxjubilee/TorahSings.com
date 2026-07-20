@@ -22,6 +22,7 @@
 // ============================================================================
 import { config } from '../config.js';
 import { logger } from '../logger.js';
+import { getServiceToken } from './jiSync.js';
 
 const LOGIN_PATH = '/api/auth/login';
 const VERIFY_PATH = '/api/auth/verify-login';
@@ -67,21 +68,54 @@ export function jiVerifyLogin({ verificationGuid, code, ip }) {
 //                            reconciles a genuine duplicate via a 409).
 export async function jiCheckEmail(email) {
   // The check-email guard normally targets the same JI as login (config.jiLogin.baseUrl).
-  // JI_CHECK_EMAIL_BASE overrides ONLY this guard, so the signup duplicate-check can be
-  // pointed at JI UAT for testing without redirecting real user LOGINS there (login keeps
-  // using config.jiLogin.baseUrl). Never point login at UAT in prod — real accounts live
-  // in JI prod, so UAT delegation would lock every real user out.
+  // JI_CHECK_EMAIL_BASE overrides ONLY this guard, so the duplicate-check can be aimed
+  // at a different JI than login delegation.
   const base = (process.env.JI_CHECK_EMAIL_BASE || config.jiLogin.baseUrl).replace(/\/$/, '');
   const url = `${base}${CHECK_EMAIL_PATH}?email=${encodeURIComponent(email)}`;
+
+  // JI PROD requires the client-credentials Bearer here (UAT served it publicly).
+  // Without it prod answers 401, which would fall through to `unknown` and quietly
+  // stop blocking duplicates — the guard would look alive while doing nothing. No new
+  // secret: this is the same token jiSync already mints from JI_SERVICE_CLIENT_ID/SECRET.
+  const call = (token) =>
+    fetch(url, {
+      method: 'GET',
+      headers: { accept: 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    });
+
+  // Present the Bearer ONLY to the host that issued it (config.jiSync.baseUrl =
+  // JI_API_BASE). That token carries admin.set_password / admin.provision scopes on
+  // JI PROD; sending it to a different check-email host (e.g. a UAT base) would leak
+  // a prod credential across a trust boundary. When the bases differ we call
+  // unauthenticated — which is all a public UAT check-email needs.
+  const issuer = config.jiSync.baseUrl.replace(/\/$/, '');
+  let token = null;
+  if (base === issuer) {
+    try {
+      token = await getServiceToken();
+    } catch (err) {
+      // Creds unconfigured/failed: still try unauthenticated (UAT-style public route).
+      logger.warn({ err, email }, 'JI check-email: service token unavailable; calling unauthenticated');
+    }
+  }
+
   let res;
   try {
-    res = await fetch(url, { method: 'GET', headers: { accept: 'application/json' } });
+    res = await call(token);
+    // Token expired or revoked between cache and use -> re-mint once and retry.
+    if (res.status === 401 && token) {
+      token = await getServiceToken(true);
+      res = await call(token);
+    }
   } catch (err) {
     logger.warn({ err, email }, 'JI check-email unreachable — allowing signup to proceed');
     return { unknown: true };
   }
   if (!res.ok) {
-    logger.warn({ email, status: res.status }, 'JI check-email non-OK — allowing signup to proceed');
+    // 401 here means the Bearer was rejected outright — the guard is misconfigured, not
+    // merely offline. Log loudly: it fails open, so it is otherwise silent.
+    const level = res.status === 401 ? 'error' : 'warn';
+    logger[level]({ email, status: res.status, base }, 'JI check-email non-OK — allowing signup to proceed');
     return { unknown: true };
   }
   const body = await res.json().catch(() => null);

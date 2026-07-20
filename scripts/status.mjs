@@ -29,6 +29,15 @@ const lines = walk(ROOT);
 const allBooks = fs.readdirSync(ROOT, { withFileTypes: true })
   .filter((e) => e.isDirectory() && /^\d\d_/.test(e.name)).map((e) => e.name).sort();
 
+// Albums are FOLDERS, not file-bearing folders — a scaffolded album with a title
+// but no content yet must still show in the Albums column (its zeros are the point).
+const scaffold = new Map();
+for (const book of allBooks) {
+  const dirs = fs.readdirSync(path.join(ROOT, book), { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name);
+  scaffold.set(book, dirs);
+}
+
 // book -> album -> counts
 const books = new Map();
 for (const p of lines) {
@@ -67,6 +76,9 @@ const partial = [];
 
 for (const book of allBooks) {
   const albums = books.get(book) || new Map();
+  for (const d of scaffold.get(book) || []) {
+    if (!albums.has(d)) albums.set(d, { lyrics: 0, mp3: 0, proof: 0, lyrFile: null });
+  }
   let lyrics = 0, mp3 = 0, proof = 0, all3 = 0;
   for (const [name, a] of albums) {
     if (a.lyrics > 0) lyrics++;
