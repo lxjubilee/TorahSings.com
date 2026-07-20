@@ -115,7 +115,7 @@
 
 .rowHead {
   display: grid;
-  grid-template-columns: 36px 1fr auto 40px;
+  grid-template-columns: 36px 1fr auto 62px;
   gap: 14px;
   align-items: center;
   padding: 6px 12px;
@@ -135,7 +135,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 36px 1fr auto 40px;
+  grid-template-columns: 36px 1fr auto 62px;
   gap: 14px;
   align-items: center;
   padding: 11px 12px;
@@ -147,9 +147,104 @@
   background: rgba(254, 202, 87, 0.06);
 }
 
+/* Number / play glyph / equaliser, stacked in one cell so swaps don't reflow. */
 .num {
+  display: grid;
+  place-items: center;
+  height: 20px;
   color: var(--ink-faint);
   font-size: 13px;
+}
+
+.num > * {
+  grid-area: 1 / 1;
+}
+
+.cue,
+.bars {
+  opacity: 0;
+}
+
+.cue {
+  display: inline-flex;
+  color: var(--ink);
+}
+
+.cue svg {
+  width: 15px;
+  height: 15px;
+}
+
+.row:hover .numText {
+  opacity: 0;
+}
+
+.row:hover .cue {
+  opacity: 1;
+}
+
+/* Playing: the equaliser replaces the number — until you hover, which brings
+   back the glyph (now a pause icon) since hovering means you're about to act. */
+.playing .numText {
+  opacity: 0;
+}
+
+.playing .bars {
+  opacity: 1;
+}
+
+.playing:hover .bars {
+  opacity: 0;
+}
+
+.bars {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 14px;
+}
+
+.bars i {
+  width: 2px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--accent-soft);
+  animation: eq 900ms ease-in-out infinite;
+}
+
+.bars i:nth-child(2) {
+  animation-delay: -600ms;
+}
+
+.bars i:nth-child(3) {
+  animation-delay: -300ms;
+}
+
+.bars i:nth-child(4) {
+  animation-delay: -750ms;
+}
+
+/* Paused mid-track: freeze the bars rather than hide them. */
+.paused .bars i {
+  animation-play-state: paused;
+}
+
+@keyframes eq {
+  0%,
+  100% {
+    height: 3px;
+  }
+  50% {
+    height: 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars i {
+    animation: none;
+    height: 9px;
+  }
 }
 
 .name {
@@ -178,23 +273,19 @@
 }
 
 /*
- * The per-row marker. It shows a green tick (this song is in the playlist) and
- * swaps to a cut icon while the row is hovered, which is when it can be clicked.
+ * Trailing marks: a green tick that always shows (this song is in the playlist)
+ * and, on row hover, a cut icon beside it that removes the song.
  */
-.mark {
-  display: inline-grid;
-  place-items: center;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
+.marks {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
-.mark svg {
-  /* Stacked in one cell so swapping faces doesn't shift the row. */
-  grid-area: 1 / 1;
-  width: 22px;
-  height: 22px;
+.marks svg {
+  width: 21px;
+  height: 21px;
   fill: none;
   stroke-width: 1.6;
   stroke-linecap: round;
@@ -202,29 +293,39 @@
 }
 
 .tick {
-  stroke: #4ac26b;
+  display: inline-flex;
+  color: #4ac26b;
+  stroke: currentColor;
 }
 
 .cut {
-  stroke: var(--accent-peach);
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  stroke: currentColor;
+  cursor: pointer;
   opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
 }
 
-.row:hover .tick,
-.mark:focus-visible .tick {
-  opacity: 0;
+.cut svg {
+  width: 15px;
+  height: 15px;
 }
 
 .row:hover .cut,
-.mark:focus-visible .cut {
+.cut:focus-visible {
   opacity: 1;
 }
 
+.cut:hover {
+  color: var(--accent-peach);
+}
+
 @media (hover: none) {
-  /* No hover to reveal it — keep the remove affordance permanently visible. */
-  .tick {
-    opacity: 0;
-  }
+  /* Nothing to hover with — keep the remove control permanently visible. */
   .cut {
     opacity: 1;
   }

@@ -169,10 +169,39 @@ export function PlaylistDetail({ id }: { id: string }) {
               return (
                 <li
                   key={it.id}
-                  className={`${styles.row} ${active ? styles.playing : ''}`}
+                  className={[
+                    styles.row,
+                    active ? styles.playing : '',
+                    active && !playing ? styles.paused : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   onClick={() => playable && toggle(playable, queue)}
                 >
-                  <span className={styles.num}>{i + 1}</span>
+                  {/*
+                   * One cell, three faces: the track number, a play/pause glyph
+                   * while the row is hovered, and an equaliser once the row is
+                   * the playing track. Stacked in a single grid area so swapping
+                   * between them never shifts the row.
+                   */}
+                  <span className={styles.num}>
+                    <span className={styles.numText}>{i + 1}</span>
+                    {playable && (
+                      <span className={styles.cue} aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                          <path d={active && playing ? PAUSE : PLAY} />
+                        </svg>
+                      </span>
+                    )}
+                    {active && (
+                      <span className={styles.bars} aria-hidden="true">
+                        <i />
+                        <i />
+                        <i />
+                        <i />
+                      </span>
+                    )}
+                  </span>
                   <span className={styles.name}>
                     <span className={styles.songTitle}>{it.song_title || hit?.track.title || 'Unknown track'}</span>
                     <span className={styles.sub}>
@@ -182,29 +211,37 @@ export function PlaylistDetail({ id }: { id: string }) {
                   </span>
                   <span className={styles.noAudio}>{playable ? '' : 'No audio'}</span>
                   {/*
-                   * One control, two faces: a green tick marking the song as in
-                   * this playlist, which becomes a cut icon on row hover so the
-                   * same spot removes it. The icon can only read "cut" while the
-                   * pointer is over the row, so a click never removes silently.
+                   * The green tick is a status marker — every song here is in
+                   * this playlist — so it stays put. The cut icon is a separate
+                   * control that appears beside it on row hover, which is the
+                   * only thing that removes.
                    */}
-                  <button
-                    type="button"
-                    className={styles.mark}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void remove(it.id);
-                    }}
-                    aria-label={`Remove ${it.song_title ?? hit?.track.title ?? 'track'} from this playlist`}
-                  >
-                    <svg className={styles.tick} viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M8.2 12.3l2.6 2.6 5-5.2" />
-                    </svg>
-                    <svg className={styles.cut} viewBox="0 0 24 24" aria-hidden="true">
-                      <circle cx="12" cy="12" r="9" />
-                      <path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" />
-                    </svg>
-                  </button>
+                  <span className={styles.marks}>
+                    <span
+                      className={styles.tick}
+                      title="In this playlist"
+                      aria-label="In this playlist"
+                      role="img"
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M8.2 12.3l2.6 2.6 5-5.2" />
+                      </svg>
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.cut}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void remove(it.id);
+                      }}
+                      aria-label={`Remove ${it.song_title ?? hit?.track.title ?? 'track'} from this playlist`}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  </span>
                 </li>
               );
             })}
