@@ -21,6 +21,7 @@ import { notFound, errorHandler } from './middleware/error.js';
 
 import authRouter from './routes/auth.js';
 import adminRouter from './routes/adminUsers.js';
+import meRouter from './routes/me.js';
 import reviewsRouter from './routes/reviews.js';
 import serviceRouter from './routes/service.js';
 import serviceTokenRouter from './routes/serviceToken.js';
@@ -80,6 +81,12 @@ app.use('/api/auth', authLimiter, authRouter);
 // with no MANIFEST_PATH configured getManifest() falls back to an empty catalog
 // rather than throwing, so that route simply finds nothing.
 app.use('/api/reviews', writeLimiter, reviewsRouter);
+
+// Personal account-backed data (likes/favorites, playlists). Whole router is
+// requireAuth. Likes key on the same derived album/song uuids as reviews
+// (see ids.js); the GET /likes list resolves via the manifest, which is empty
+// here, so the web resolves liked uuids against its own catalog instead.
+app.use('/api/me', writeLimiter, meRouter);
 
 // Admin surface — GET /api/admin/users etc. The router itself enforces
 // requireRole('admin'), so every route here needs an admin user's access token.

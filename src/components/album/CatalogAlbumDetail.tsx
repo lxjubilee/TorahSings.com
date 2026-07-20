@@ -9,6 +9,8 @@ import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
 import { ApiError } from '@/lib/api';
 import { albumUuid, songUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
+import { likeKey, likeTarget, listLikeIds, unlikeTarget } from '@/lib/likes';
+import { SignInGate } from '@/components/gating/SignInGate';
 import {
   batchSummaries,
   summaryKey,
@@ -49,6 +51,9 @@ const ICON = {
   pause: 'M6 5h4v14H6zM14 5h4v14h-4z',
   add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
   check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
+  heartOutline:
+    'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
 } as const;
 
 function Icon({ d }: { d: string }) {
@@ -86,6 +91,49 @@ export function CatalogAlbumDetail({
 
   const [saved, setSaved] = useState(false);
   const [following, setFollowing] = useState(false);
+
+  // Account-backed like. Guests get the sign-in gate instead of a silent no-op.
+  const [liked, setLiked] = useState(false);
+  const [likeBusy, setLikeBusy] = useState(false);
+  const [gateOpen, setGateOpen] = useState(false);
+
+  useEffect(() => {
+    if (!session) {
+      setLiked(false);
+      return;
+    }
+    let cancelled = false;
+    listLikeIds()
+      .then((r) => {
+        if (!cancelled) setLiked(r.ids.includes(likeKey('album', albumUuid(album.code))));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session, album.code]);
+
+  const toggleLike = async () => {
+    if (!session) {
+      setGateOpen(true);
+      return;
+    }
+    const id = albumUuid(album.code);
+    setLikeBusy(true);
+    try {
+      if (liked) {
+        await unlikeTarget('album', id);
+        setLiked(false);
+      } else {
+        await likeTarget('album', id);
+        setLiked(true);
+      }
+    } catch {
+      /* a failed toggle leaves the button as it was */
+    } finally {
+      setLikeBusy(false);
+    }
+  };
   const [added, setAdded] = useState<Set<number>>(new Set());
 
   // Summaries keyed "album:<uuid>" / "song:<uuid>", loaded in one batch.
@@ -244,6 +292,18 @@ export function CatalogAlbumDetail({
 
             <button
               type="button"
+              className={`${styles.follow} ${liked ? styles.likeOn : ''}`}
+              onClick={toggleLike}
+              disabled={likeBusy}
+              aria-pressed={liked}
+              aria-label={liked ? 'Remove from liked' : 'Like this album'}
+            >
+              <Icon d={liked ? ICON.heart : ICON.heartOutline} />
+              {liked ? 'Liked' : 'Like'}
+            </button>
+
+            <button
+              type="button"
               className={styles.follow}
               onClick={() => setFollowing((f) => !f)}
               aria-pressed={following}
@@ -340,6 +400,8 @@ export function CatalogAlbumDetail({
             />
           );
         })()}
+
+      {gateOpen && <SignInGate onClose={() => setGateOpen(false)} />}
     </div>
   );
 }
