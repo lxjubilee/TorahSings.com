@@ -186,6 +186,39 @@
   cursor: pointer;
 }
 
+/* Sign-up: live password-strength meter, tucked under the password field. The
+   bar width and colour are set inline from passwordStrength(). */
+.strength {
+  margin: -12px 0 16px;
+}
+
+.strengthTrack {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.strengthBar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.strengthLabel {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Sign-up: real-time confirm-password mismatch, tucked under the confirm field. */
+.mismatch {
+  margin: -12px 0 16px;
+  font-size: 13px;
+  color: #e94560;
+}
+
 /* Sign-up: replace the browser's calendar glyph with a custom icon so the date
    field matches the password eye icons exactly — same 18px, same gold #e0b766,
    same right-edge position. The native glyph otherwise sits inside the 44px

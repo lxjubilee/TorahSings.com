@@ -18,6 +18,30 @@ const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '';
  */
 const MIN_AGE = 13;
 
+/**
+ * A rough password-strength score for the signup meter. 1–4:
+ *   1 Weak · 2 Fair · 3 Good · 4 Strong
+ * Length is the floor — anything under 8 (the API minimum) can never rank above
+ * Weak, regardless of character mix.
+ */
+function passwordStrength(pw: string): { score: 1 | 2 | 3 | 4; label: string; color: string } {
+  let s = 0;
+  if (pw.length >= 8) s += 1;
+  if (pw.length >= 12) s += 1;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s += 1;
+  if (/\d/.test(pw)) s += 1;
+  if (/[^A-Za-z0-9]/.test(pw)) s += 1;
+  if (pw.length < 8) s = Math.min(s, 1);
+  const score = Math.min(4, Math.max(1, s)) as 1 | 2 | 3 | 4;
+  const meta = {
+    1: { label: 'Weak', color: '#e94560' },
+    2: { label: 'Fair', color: '#ff8a6b' },
+    3: { label: 'Good', color: '#feca57' },
+    4: { label: 'Strong', color: '#4ac26b' },
+  }[score];
+  return { score, ...meta };
+}
+
 /** Whole years from an ISO `yyyy-mm-dd` date to today; NaN when unparseable. */
 function ageFromDob(iso: string): number {
   const d = new Date(`${iso}T00:00:00`);
@@ -596,6 +620,25 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                 </button>
               </div>
 
+              {isSignup && password.length > 0 && (
+                (() => {
+                  const st = passwordStrength(password);
+                  return (
+                    <div className={styles.strength} aria-live="polite">
+                      <div className={styles.strengthTrack}>
+                        <div
+                          className={styles.strengthBar}
+                          style={{ width: `${st.score * 25}%`, background: st.color }}
+                        />
+                      </div>
+                      <span className={styles.strengthLabel} style={{ color: st.color }}>
+                        {st.label} password
+                      </span>
+                    </div>
+                  );
+                })()
+              )}
+
               {isSignup && (
                 <div className={styles.field}>
                   <label htmlFor="confirm">Confirm Password</label>
@@ -618,6 +661,12 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                     <Eye open={showConfirm} />
                   </button>
                 </div>
+              )}
+
+              {isSignup && confirm.length > 0 && confirm !== password && (
+                <p className={styles.mismatch} aria-live="polite">
+                  Passwords don&rsquo;t match
+                </p>
               )}
 
               {isSignup ? (
