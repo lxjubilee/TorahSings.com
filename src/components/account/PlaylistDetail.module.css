@@ -1,3 +1,13 @@
+/* The whole page sits in one bordered card, as on JubiLujah's /playlist. */
+.panel {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 28px 32px 34px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: var(--bg-panel);
+}
+
 .head {
   display: flex;
   gap: 26px;
@@ -167,18 +177,57 @@
   color: var(--accent-soft);
 }
 
-.remove {
+/*
+ * The per-row marker. It shows a green tick (this song is in the playlist) and
+ * swaps to a cut icon while the row is hovered, which is when it can be clicked.
+ */
+.mark {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
   border: none;
   background: none;
-  color: var(--ink-faint);
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
-  padding: 4px;
 }
 
-.remove:hover {
-  color: var(--accent-peach);
+.mark svg {
+  /* Stacked in one cell so swapping faces doesn't shift the row. */
+  grid-area: 1 / 1;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tick {
+  stroke: #4ac26b;
+}
+
+.cut {
+  stroke: var(--accent-peach);
+  opacity: 0;
+}
+
+.row:hover .tick,
+.mark:focus-visible .tick {
+  opacity: 0;
+}
+
+.row:hover .cut,
+.mark:focus-visible .cut {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  /* No hover to reveal it — keep the remove affordance permanently visible. */
+  .tick {
+    opacity: 0;
+  }
+  .cut {
+    opacity: 1;
+  }
 }
 
 .noAudio {

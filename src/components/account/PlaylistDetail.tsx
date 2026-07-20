@@ -113,7 +113,7 @@ export function PlaylistDetail({ id }: { id: string }) {
   const firstCover = detail.items.map((i) => bySongId.get(i.song_id)?.album.art).find(Boolean) ?? null;
 
   return (
-    <>
+    <section className={styles.panel}>
       <div className={styles.head}>
         <div className={styles.cover}>
           {firstCover ? (
@@ -181,16 +181,29 @@ export function PlaylistDetail({ id }: { id: string }) {
                     </span>
                   </span>
                   <span className={styles.noAudio}>{playable ? '' : 'No audio'}</span>
+                  {/*
+                   * One control, two faces: a green tick marking the song as in
+                   * this playlist, which becomes a cut icon on row hover so the
+                   * same spot removes it. The icon can only read "cut" while the
+                   * pointer is over the row, so a click never removes silently.
+                   */}
                   <button
                     type="button"
-                    className={styles.remove}
+                    className={styles.mark}
                     onClick={(e) => {
                       e.stopPropagation();
                       void remove(it.id);
                     }}
-                    aria-label={`Remove ${it.song_title ?? 'track'} from this playlist`}
+                    aria-label={`Remove ${it.song_title ?? hit?.track.title ?? 'track'} from this playlist`}
                   >
-                    ×
+                    <svg className={styles.tick} viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M8.2 12.3l2.6 2.6 5-5.2" />
+                    </svg>
+                    <svg className={styles.cut} viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6" />
+                    </svg>
                   </button>
                 </li>
               );
@@ -198,6 +211,6 @@ export function PlaylistDetail({ id }: { id: string }) {
           </ol>
         </>
       )}
-    </>
+    </section>
   );
 }

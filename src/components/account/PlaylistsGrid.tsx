@@ -17,6 +17,7 @@ import {
 import styles from './PlaylistsGrid.module.css';
 
 const NOTE = 'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z';
+const PLAY = 'M8 5v14l11-7z';
 
 type Track = CatalogAlbum['tracks'][number];
 
@@ -202,7 +203,10 @@ export function PlaylistsGrid() {
 
               <div className={styles.cardActions}>
                 <button type="button" className={styles.play} onClick={() => onPlay(p)}>
-                  ▶ Play
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d={PLAY} />
+                  </svg>
+                  Play
                 </button>
                 <button
                   type="button"
