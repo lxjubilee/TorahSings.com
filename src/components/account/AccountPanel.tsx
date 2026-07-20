@@ -105,7 +105,7 @@ function downloadLetterTable() {
 }
 
 export function AccountPanel() {
-  const { session, status, entitlement, isStub, signIn, signOut, subscribe, deleteAccount } = useJubileeAccount();
+  const { session, status, entitlement, signIn, signOut, subscribe, deleteAccount } = useJubileeAccount();
 
   // Change-password form — local state only (see the note at the top).
   const [current, setCurrent] = useState('');
@@ -197,7 +197,6 @@ export function AccountPanel() {
               Sign in
             </button>
           </div>
-          {isStub && <StubNotice />}
         </div>
       </div>
     );
@@ -494,8 +493,6 @@ export function AccountPanel() {
             </button>
           </div>
         </section>
-
-        {isStub && <StubNotice />}
       </div>
 
       {confirmOpen && (
@@ -545,21 +542,6 @@ export function AccountPanel() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/** Says out loud that SSO is not yet wired, rather than letting the stub pass for the real thing. */
-function StubNotice() {
-  return (
-    <div className={styles.stub}>
-      <div className={styles.eyebrow}>Development mode</div>
-      <p className={styles.stubBody}>
-        Jubilee Account SSO is not connected. This session is a local stand-in stored in your browser so that
-        gating, subscription state, and unlocks can be exercised end to end. Change password and Delete account
-        are laid out but inert until it is wired. Set <code>NEXT_PUBLIC_JUBILEE_SSO_URL</code> to hand off to the
-        real identity service.
-      </p>
     </div>
   );
 }
