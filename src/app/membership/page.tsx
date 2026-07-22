@@ -48,6 +48,7 @@ export default function MembershipPage() {
             ? `Level ${freeLesson.level} of Learn Hebrew — ${freeLesson.title}`
             : 'The doorway into Learn Hebrew'
         }
+        freeLessonShort={freeLesson ? `Level ${freeLesson.level} only` : 'The first level'}
       />
 
         <div className={styles.closing}>
