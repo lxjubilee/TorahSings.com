@@ -33,7 +33,7 @@ import {
 } from 'react';
 import type { Entitlement } from './access';
 import { api } from './api';
-import { clearTokens } from './auth';
+import { clearTokens, getRefreshToken } from './auth';
 
 export interface JubileeSubscription {
   status: 'active' | 'none';
@@ -66,6 +66,15 @@ interface JubileeContextValue {
    * surfaces it); clears the session only on success.
    */
   deleteAccount: () => Promise<void>;
+  /**
+   * Change the signed-in user's password (POST /api/auth/change-password). THIS
+   * device stays signed in — its refresh token is passed through so only OTHER
+   * devices are revoked. Rejects with ApiError on failure (wrong current
+   * password → 401, JI rejection → 422/409/502); the caller surfaces the
+   * message. In prod (ji mode) the API delegates the write to JubileeInspire and
+   * only resolves when JI accepts it.
+   */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   /** Begins checkout. Against real SSO this hands off to Jubilee billing. */
   subscribe: () => void;
   /** Buys the book on its own. Null when no billing endpoint is configured. */
@@ -173,6 +182,18 @@ export function JubileeAccountProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
 
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    // Pass THIS device's refresh token so the API revokes every OTHER device but
+    // keeps us signed in. On failure api.post throws ApiError carrying the
+    // server's message (wrong current password, JI rejection, etc.); the caller
+    // shows it. No local token/session change on success — this device stays put.
+    await api.post('/api/auth/change-password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+      refreshToken: getRefreshToken() ?? undefined,
+    });
+  }, []);
+
   /** Simulated until the subscriptions router is mounted — see the file header. */
   const subscribe = useCallback(() => {
     setSimulatedSubscription(true);
@@ -195,10 +216,11 @@ export function JubileeAccountProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       deleteAccount,
+      changePassword,
       subscribe,
       purchaseBook,
     }),
-    [session, status, isStub, signIn, signOut, deleteAccount, subscribe, purchaseBook],
+    [session, status, isStub, signIn, signOut, deleteAccount, changePassword, subscribe, purchaseBook],
   );
 
   return <JubileeContext.Provider value={value}>{children}</JubileeContext.Provider>;

@@ -14,10 +14,11 @@
 // The Bearer token is cached in-process until shortly before it expires and
 // reused across syncs; a 401 triggers exactly one forced re-fetch + retry.
 //
-// Best-effort by design: this NEVER throws to the caller and never blocks the
-// local password change from succeeding. A failure is logged (with status/body)
-// and returned as { ok:false } so the route can surface a soft warning and ops
-// can reconcile. Disabled (no-op) when no client secret is configured.
+// Best-effort by design: this NEVER throws to the caller. A failure is logged
+// (with status/body) and returned as { ok:false, ... } so callers decide how to
+// react — reset-password surfaces a soft warning, while change-password GATES on
+// the result (only succeeds if JI does). Disabled (no-op) when no client secret
+// is configured.
 // ============================================================================
 import { config } from '../config.js';
 import { logger } from '../logger.js';
@@ -77,12 +78,25 @@ async function postSetPassword(token, email, newPassword) {
   });
 }
 
+// Pull a human-readable reason out of a JI error response so a gating caller
+// (change-password) can surface it. Prefers a JSON { error } / { message }, else
+// a trimmed slice of the raw body.
+function extractMessage(body) {
+  if (!body) return undefined;
+  try {
+    const j = JSON.parse(body);
+    const m = j.error || j.message;
+    if (m) return String(m).slice(0, 300);
+  } catch { /* not JSON — fall through to raw body */ }
+  return body.slice(0, 300) || undefined;
+}
+
 /**
  * Push a user's new password to JubileeInspire. Resolves to a result object;
  * never rejects.
  *   { ok:true }                       — synced
  *   { ok:false, skipped:true }        — sync disabled (no creds configured)
- *   { ok:false, status }              — JI rejected the set-password call
+ *   { ok:false, status, message }     — JI rejected the set-password call
  *   { ok:false, error }               — network/parse/token failure
  */
 export async function syncPasswordToJI(email, newPassword) {
@@ -106,7 +120,7 @@ export async function syncPasswordToJI(email, newPassword) {
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       logger.error({ email, status: res.status, body: body.slice(0, 300) }, 'JI set-password failed');
-      return { ok: false, status: res.status };
+      return { ok: false, status: res.status, message: extractMessage(body) };
     }
 
     logger.info({ email }, 'Password synced to JubileeInspire');

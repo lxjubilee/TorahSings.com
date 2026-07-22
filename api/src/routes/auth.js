@@ -652,19 +652,36 @@ const changeSchema = z.object({
 });
 router.post('/change-password', requireAuth, validate(changeSchema), ah(async (req, res) => {
   const userId = req.auth.user.id;
+  const email = req.auth.user.email;
   const cr = await query('SELECT password_hash FROM identity.credentials WHERE user_id = $1', [userId]);
   if (!cr.rowCount) throw new HttpError(409, 'No password is set for this account. Use “forgot password” to create one.');
+  // The ONLY local step: verify the current password as an auth gate. It is never
+  // sent to JI — JI is the credential authority and just accepts the new password.
   if (!verifyPassword(req.body.current_password, cr.rows[0].password_hash)) {
     throw new HttpError(401, 'Current password is incorrect.');
   }
+
+  // JI is authoritative: push the new password to JI FIRST and only proceed if JI
+  // accepts it, so on a JI failure nothing changes anywhere (the old password keeps
+  // working). When JI sync is disabled (e.g. local dev, no service creds) fall back
+  // to a local-only change so development still works.
+  const jiSync = await syncPasswordToJI(email, req.body.new_password);
+  if (!jiSync.ok && !jiSync.skipped) {
+    if (jiSync.status === 422) throw new HttpError(422, jiSync.message || 'New password was rejected by the identity provider.');
+    if (jiSync.status === 404) throw new HttpError(409, 'No matching identity-provider account for this user.');
+    throw new HttpError(502, 'Could not update your password with the identity provider. Your password was not changed.');
+  }
+
+  // JI accepted (or sync is disabled). Keep the local hash in sync so login is
+  // correct in BOTH login modes (local verifies here; ji delegates to JI). Edge:
+  // if JI took the change but this UPDATE fails, JI (authoritative) has the new
+  // password and a re-run reconciles the local mirror.
   await query('UPDATE identity.credentials SET password_hash = $2 WHERE user_id = $1', [userId, hashPassword(req.body.new_password)]);
   await writeAudit(null, userId, 'password.changed', { ip: req.ip });
   // Force every other device to re-login by revoking their refresh tokens; keep
   // this device's (passed in the body) alive so the caller stays signed in. The
   // caller's current access JWT remains valid until its TTL either way.
   await revokeAllRefreshTokens(userId, { exceptToken: req.body?.refreshToken });
-  // Mirror the new password to JubileeInspire (best-effort; never blocks change).
-  const jiSync = await syncPasswordToJI(req.auth.user.email, req.body.new_password);
   res.json({ ok: true, jiSync });
 }));
 

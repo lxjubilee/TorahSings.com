@@ -24,14 +24,14 @@ import styles from './AccountPanel.module.css';
  * TorahSings only — it never calls JubileeInspire, so the shared Jubilee Account
  * and other sites are untouched.
  *
- * "Change password" is still PRESENTATION ONLY: it validates locally and stops
- * (PENDING_NOTICE) rather than pretending to work. Wire it to
+ * "Change password" is LIVE: submitPassword validates locally, then calls
+ * changePassword() (jubilee-account.tsx) →
  *   POST /api/auth/change-password  { current_password, new_password, refreshToken? }
- * (docs/API.md §7.2) to finish it, then drop PENDING_NOTICE.
+ * (docs/API.md §7.2). This device stays signed in; other devices are revoked. In
+ * prod (ji mode) the API delegates the write to JubileeInspire and only succeeds
+ * when JI accepts it — a rejection surfaces here with the server's message.
  * ────────────────────────────────────────────────────────────────────────────
  */
-
-const PENDING_NOTICE = 'Not connected yet — this will work once your Jubilee Account is wired to the identity service.';
 
 /**
  * The contribution counters, in display order. Values come from
@@ -105,7 +105,7 @@ function downloadLetterTable() {
 }
 
 export function AccountPanel() {
-  const { session, status, entitlement, signIn, signOut, subscribe, deleteAccount } = useJubileeAccount();
+  const { session, status, entitlement, signIn, signOut, subscribe, deleteAccount, changePassword } = useJubileeAccount();
 
   // Change-password form — local state only (see the note at the top).
   const [current, setCurrent] = useState('');
@@ -116,6 +116,7 @@ export function AccountPanel() {
   const [showConf, setShowConf] = useState(false);
   const [pwErr, setPwErr] = useState<string | null>(null);
   const [pwNote, setPwNote] = useState<string | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
 
   // Delete-account.
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -205,8 +206,7 @@ export function AccountPanel() {
   const isMember = entitlement === 'member';
   const initial = (session.displayName || session.email || '?').trim().charAt(0).toUpperCase();
 
-  // Validates like the real thing, then stops at the door — no request is sent.
-  const submitPassword = (e: React.FormEvent) => {
+  const submitPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setPwErr(null);
     setPwNote(null);
@@ -218,7 +218,26 @@ export function AccountPanel() {
       setPwErr('New passwords do not match.');
       return;
     }
-    setPwNote(PENDING_NOTICE);
+    if (next === current) {
+      setPwErr('New password must be different from your current password.');
+      return;
+    }
+    setPwBusy(true);
+    try {
+      await changePassword(current, next);
+      setPwNote('Password changed — your other devices have been signed out.');
+      setCurrent('');
+      setNext('');
+      setConfirm('');
+    } catch (err) {
+      // The API sends a precise message (e.g. "Current password is incorrect.",
+      // or a JubileeInspire rejection) — show it verbatim; fall back otherwise.
+      setPwErr(
+        err instanceof ApiError ? err.message : 'Could not change your password. Please try again.',
+      );
+    } finally {
+      setPwBusy(false);
+    }
   };
 
   return (
@@ -241,7 +260,7 @@ export function AccountPanel() {
       </section>
 
       <div className={styles.shell}>
-        {/* ---- Change password (presentation only) ---- */}
+        {/* ---- Change password ---- */}
         <section className={styles.card}>
           <div className={styles.cardHead}>
             <h2 className={styles.cardTitle}>Change password</h2>
@@ -297,8 +316,8 @@ export function AccountPanel() {
             </label>
 
             <div className={styles.actions}>
-              <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`}>
-                Change password
+              <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={pwBusy}>
+                {pwBusy ? 'Changing…' : 'Change password'}
               </button>
             </div>
           </form>
