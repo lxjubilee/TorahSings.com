@@ -5,7 +5,7 @@ import { HttpError } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { requireServiceAuth, requireServiceScope } from '../middleware/serviceAuth.js';
 import { query, withTransaction } from '../db.js';
-import { hashPassword } from '../auth/password.js';
+import { hashPassword, verifyPassword } from '../auth/password.js';
 import { revokeAllRefreshTokens } from '../auth/session.js';
 import { logger } from '../logger.js';
 
@@ -170,6 +170,7 @@ const provisionSchema = z.object({
   emailVerified: z.boolean().optional(),
   dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   sourcePlatform: z.string().trim().max(32).optional(),
+  verify: z.boolean().optional(),          // login-time credential check; READS ONLY, never creates
 });
 router.post('/provision-user', requireServiceAuth, requireServiceScope('admin.provision'), validate(provisionSchema), ah(async (req, res) => {
   const b = req.body;
@@ -177,6 +178,54 @@ router.post('/provision-user', requireServiceAuth, requireServiceScope('admin.pr
   const idemKey = (req.get('idempotency-key') || '').trim() || null;
   const caller = req.serviceCaller || {};
   const EP = '/api/auth/admin/provision-user';
+
+  // ---- verify:true — LOGIN-TIME CREDENTIAL CHECK (reads only; creates NOTHING) ----
+  // A trusted partner (JubileeInspire) verifies a login for a user that lives HERE:
+  // only we hold the scrypt credential and can compare it. This branch is strictly
+  // read-only — it never inserts, updates, locks, or audits a write. On a match it
+  // returns the same user shape as check-email so the caller can mirror the account
+  // locally. THE HARD RULE: verify MUST NOT create — otherwise a login with a
+  // victim's email + a guessed password would mint an account. Runs before the create
+  // path (and before the 8-char policy gate, so a wrong short password is a 401, not a
+  // 422). See VERIFY_TRUE spec / AUTH_API.md.
+  if (b.verify === true) {
+    const vr = await query(
+      `SELECT u.id, u.email, u.display_name, u.is_active, u.first_signin_completed, u.created_at,
+              c.password_hash,
+              COALESCE(array_agg(ur.role ORDER BY ur.role) FILTER (WHERE ur.role IS NOT NULL), '{}') AS roles
+         FROM identity.users u
+         LEFT JOIN identity.credentials c ON c.user_id = u.id
+         LEFT JOIN identity.user_roles  ur ON ur.user_id = u.id
+        WHERE u.email = $1
+        GROUP BY u.id, c.password_hash`,
+      [email]
+    );
+    if (!vr.rowCount) {
+      return res.status(404).json({ ok: false, existed: false, verified: false });
+    }
+    const vu = vr.rows[0];
+    // One 401 for wrong password, no local credential (SSO-only), OR a deactivated
+    // account — never leak which, and never authenticate an inactive user.
+    // verifyPassword() is timing-safe and returns false for a null/absent hash.
+    const passOk = vu.is_active && verifyPassword(b.password, vu.password_hash);
+    if (!passOk) {
+      return res.status(401).json({ ok: false, existed: true, verified: false });
+    }
+    return res.status(200).json({
+      ok: true,
+      existed: true,
+      verified: true,
+      user: {
+        id: vu.id,
+        email: vu.email,
+        displayName: vu.display_name,
+        active: vu.is_active,
+        emailVerified: vu.first_signin_completed,
+        roles: vu.roles,
+        createdAt: vu.created_at,
+      },
+    });
+  }
 
   // Policy -> 422 (distinct from missing/malformed -> 400 via validate()).
   if (b.password.length < 8 || b.password.length > 200) {

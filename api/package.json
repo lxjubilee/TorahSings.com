@@ -11,6 +11,7 @@
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.637.0",
     "@sendgrid/mail": "^8.1.6",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
