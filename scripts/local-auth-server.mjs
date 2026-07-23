@@ -44,7 +44,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -258,6 +258,29 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 
+  -- Mirrors production.subscription_plans / subscriptions (the admin
+  -- /subscribers rollup). Annual plans are normalised to a monthly figure on
+  -- read, so the total is a true MRR rather than a mix of cadences.
+  CREATE TABLE IF NOT EXISTS subscription_plans (
+    id               TEXT PRIMARY KEY,
+    code             TEXT NOT NULL,
+    name             TEXT NOT NULL,
+    currency         TEXT NOT NULL DEFAULT 'usd',
+    billing_interval TEXT NOT NULL,
+    price_cents      INTEGER NOT NULL,
+    is_paid          INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id                   TEXT PRIMARY KEY,
+    user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id              TEXT NOT NULL REFERENCES subscription_plans(id),
+    status               TEXT NOT NULL,
+    current_period_end   INTEGER,
+    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+    started_at           INTEGER
+  );
+
   -- Mirrors production.award_categories / award_periods / nominations
   -- (api/src/routes/awards.js). The 250-char justification floor is a CHECK
   -- constraint in Postgres; here the route enforces it, same as the API does.
@@ -450,6 +473,36 @@ if (db.prepare('SELECT COUNT(*) AS n FROM playback_events').get().n === 0) {
   setInterval(beat, 15_000).unref();
 }
 
+// Seed the subscription plans, and put the first few seeded accounts on them so
+// the Subscribers section has a mix worth looking at: a yearly plan (which must
+// normalise to a monthly figure), a past-due account, and one cancelling at the
+// period end. LOCAL ONLY — real rows come from Stripe via the webhook.
+if (db.prepare('SELECT COUNT(*) AS n FROM subscription_plans').get().n === 0) {
+  const plans = [
+    ['plan-monthly', 'individual_monthly', 'Individual · Monthly', 'month', 995],
+    ['plan-yearly', 'individual_yearly', 'Individual · Yearly', 'year', 8795],
+    ['plan-free', 'free', 'Free', 'month', 0],
+  ];
+  const insPlan = db.prepare('INSERT INTO subscription_plans (id, code, name, currency, billing_interval, price_cents, is_paid) VALUES (?,?,?,?,?,?,?)');
+  for (const [id, code, name, interval, price] of plans) {
+    insPlan.run(id, code, name, 'usd', interval, price, price > 0 ? 1 : 0);
+  }
+  const users = db.prepare('SELECT id FROM users ORDER BY created_at LIMIT 4').all().map((u) => u.id);
+  const DAY = 86_400_000;
+  const seed = [
+    // [user index, plan, status, days until renewal, cancelling?]
+    [0, 'plan-yearly', 'active', 210, 0],
+    [1, 'plan-monthly', 'active', 12, 0],
+    [2, 'plan-monthly', 'past_due', 3, 0],
+    [3, 'plan-monthly', 'active', 25, 1],
+  ];
+  const insSub = db.prepare('INSERT INTO subscriptions (id, user_id, plan_id, status, current_period_end, cancel_at_period_end, started_at) VALUES (?,?,?,?,?,?,?)');
+  for (const [i, plan, status, days, cancelling] of seed) {
+    if (!users[i]) continue;
+    insSub.run(crypto.randomUUID(), users[i], plan, status, now() + days * DAY, cancelling, now() - 180 * DAY);
+  }
+}
+
 // Seed award categories and this year's periods, so the Awards section has
 // something to show. Nominations are left empty on purpose — they are created
 // through the console, which is the path worth exercising.
@@ -570,6 +623,104 @@ function analyticsTable(req, url, kind) {
   const offset = (page - 1) * limit;
   return { status: 200, body: { total: items.length, page, limit, items: items.slice(offset, offset + limit) } };
 }
+
+/* ── Publish to Production ────────────────────────────────────────────────
+ * The studio-drive bridge. `J:` is a local-network drive, so these only do
+ * anything on a machine where it is mounted — exactly as api/src/routes/
+ * publish.js behaves. Set PUBLISH_FORCE_UNAVAILABLE=1 to exercise the
+ * "not reachable" path that production always takes.
+ */
+const ANGELS_ROOT = process.env.ANGELS_ROOT || 'J:/music/angels';
+
+function studioDriveAvailable() {
+  if (process.env.PUBLISH_FORCE_UNAVAILABLE === '1') return false;
+  try {
+    return existsSync(ANGELS_ROOT);
+  } catch {
+    return false;
+  }
+}
+
+/** What the site currently serves, read from the generated catalogue. */
+function liveCatalogue() {
+  try {
+    const s = readFileSync(new URL('../src/content/angels-catalog.ts', import.meta.url), 'utf8');
+    const cats = JSON.parse(s.slice(s.indexOf('= [') + 2, s.lastIndexOf(';')));
+    const byCode = new Map();
+    let albums = 0;
+    let tracks = 0;
+    for (const c of cats) {
+      for (const a of c.albums) {
+        byCode.set(a.code, a.tracks.length);
+        if (a.tracks.length) {
+          albums += 1;
+          tracks += a.tracks.length;
+        }
+      }
+    }
+    return { byCode, albums, tracks };
+  } catch {
+    return { byCode: new Map(), albums: 0, tracks: 0 };
+  }
+}
+
+/**
+ * Albums whose drive track count exceeds what is live. Track numbers are
+ * deduped the way the orchestrator does — a Windows "name (1).mp3" copy shares
+ * its leading number with the original and must not inflate the count.
+ */
+function publishCandidates() {
+  const live = liveCatalogue();
+  const out = [];
+  let books = [];
+  try {
+    books = readdirSync(ANGELS_ROOT);
+  } catch {
+    return out;
+  }
+  for (const book of books) {
+    let albums = [];
+    try {
+      albums = readdirSync(path.join(ANGELS_ROOT, book));
+    } catch {
+      continue;
+    }
+    for (const dir of albums) {
+      const sp = dir.indexOf(' ');
+      const code = sp === -1 ? dir : dir.slice(0, sp);
+      if (!/^[A-Z0-9]+$/i.test(code)) continue;
+      let files = [];
+      try {
+        files = readdirSync(path.join(ANGELS_ROOT, book, dir, 'tracks')).filter((f) => /\.mp3$/i.test(f));
+      } catch {
+        continue;
+      }
+      const nums = new Set();
+      for (const f of files) {
+        const m = f.match(/^(\d+)/);
+        nums.add(m ? m[1] : f);
+      }
+      const jTracks = nums.size;
+      const liveCount = live.byCode.get(code) ?? 0;
+      if (jTracks > liveCount) {
+        out.push({
+          code,
+          title: sp === -1 ? dir : dir.slice(sp + 1).trim(),
+          artist: 'Sung by the Angels',
+          jTracks,
+          live: liveCount,
+          path: `${book}/${dir}`,
+        });
+      }
+    }
+  }
+  out.sort((a, b) => a.artist.localeCompare(b.artist) || a.code.localeCompare(b.code));
+  return out;
+}
+publishCandidates.liveTotals = () => {
+  const l = liveCatalogue();
+  return { albums: l.albums, tracks: l.tracks };
+};
 
 /** The API's liveness window for now_playing: 45 seconds, then a row goes cold. */
 const LIVE_WINDOW_MS = 45_000;
@@ -1472,6 +1623,105 @@ const routes = {
       status: 200,
       csv: [HEAD.join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n'),
       filename: `torahsings-analytics-${kind}.csv`,
+    };
+  },
+
+  /**
+   * GET /api/admin/publish/candidates — albums with audio on the studio drive
+   * that is not fully live yet.
+   *
+   * Mirrors api/src/routes/publish.js, including the headline behaviour: when
+   * the drive is not reachable it answers `available: false` rather than an
+   * error, and the console explains itself instead of offering dead controls.
+   */
+  'GET /api/admin/publish/candidates': (_body, req) => {
+    requireAdmin(req);
+    if (!studioDriveAvailable()) return { status: 200, body: { available: false, candidates: [] } };
+    const candidates = publishCandidates();
+    return { status: 200, body: { available: true, count: candidates.length, candidates } };
+  },
+
+  /**
+   * POST /api/admin/publish — publish the given album codes.
+   *
+   * The real route spawns the studio orchestrator (rclone → manifest → deploy)
+   * and streams back its NDJSON. There is no orchestrator here, so this
+   * validates exactly as the API does and returns a step trace of the same
+   * shape. It deliberately does NOT upload anything.
+   */
+  'POST /api/admin/publish': (body, req) => {
+    const me = requireAdmin(req);
+    if (!studioDriveAvailable()) {
+      throw new HttpError(400, 'The J: drive is not reachable here — open Publish to Production from the studio machine (localhost).');
+    }
+    const codes = (Array.isArray(body?.codes) ? body.codes : [])
+      .map((c) => String(c).toUpperCase())
+      .filter((c) => /^[A-Z0-9]+$/.test(c));
+    if (!codes.length) throw new HttpError(400, 'no album codes given');
+    if (codes.length > 400) throw new HttpError(400, 'too many at once');
+
+    audit(me.id, 'publish.run', { codes });
+
+    const steps = [];
+    for (const code of codes) {
+      steps.push({ step: 'upload', code, ok: true });
+      steps.push({ step: 'manifest', code, ok: true });
+      steps.push({ step: 'published', code, ok: true });
+    }
+    const live = publishCandidates.liveTotals();
+    steps.push({ done: true, ok: true, totals: { playableAlbums: live.albums, playableTracks: live.tracks } });
+    return { status: 200, body: { ok: true, steps, codes } };
+  },
+
+  /**
+   * GET /api/admin/subscribers — live paid subscriptions plus a per-plan
+   * rollup. Mirrors api/src/routes/admin.js, including the ordering: active
+   * before past due, then by value, then by name.
+   */
+  'GET /api/admin/subscribers': (_body, req) => {
+    requireAdmin(req);
+    const rows = db
+      .prepare(
+        `SELECT s.id, s.user_id, u.display_name, u.email,
+                p.code AS plan_code, p.name AS plan_name, p.currency,
+                p.billing_interval, p.price_cents,
+                CASE WHEN p.billing_interval = 'year'
+                     THEN CAST(ROUND(p.price_cents / 12.0) AS INTEGER)
+                     ELSE p.price_cents END AS monthly_cents,
+                s.status, s.current_period_end, s.cancel_at_period_end, s.started_at
+           FROM subscriptions s
+           JOIN subscription_plans p ON p.id = s.plan_id
+           JOIN users u ON u.id = s.user_id
+          WHERE p.is_paid = 1
+            AND s.status IN ('active', 'past_due')
+          ORDER BY (s.status = 'active') DESC, monthly_cents DESC, u.display_name`,
+      )
+      .all();
+
+    const subscribers = rows.map((x) => ({
+      ...x,
+      cancel_at_period_end: !!x.cancel_at_period_end,
+      current_period_end: x.current_period_end ? new Date(x.current_period_end).toISOString() : null,
+      started_at: x.started_at ? new Date(x.started_at).toISOString() : null,
+    }));
+
+    const monthly_total_cents = subscribers.reduce((sum, x) => sum + (x.monthly_cents || 0), 0);
+    const byPlan = {};
+    for (const x of subscribers) {
+      const k = x.plan_name || x.plan_code;
+      if (!byPlan[k]) byPlan[k] = { plan: k, count: 0, monthly_cents_each: x.monthly_cents, subtotal_cents: 0 };
+      byPlan[k].count += 1;
+      byPlan[k].subtotal_cents += x.monthly_cents || 0;
+    }
+    return {
+      status: 200,
+      body: {
+        currency: subscribers[0]?.currency || 'usd',
+        count: subscribers.length,
+        monthly_total_cents,
+        by_plan: Object.values(byPlan),
+        subscribers,
+      },
     };
   },
 

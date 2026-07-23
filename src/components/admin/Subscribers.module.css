@@ -1,0 +1,97 @@
+.planRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.plan {
+  padding: 13px 15px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+}
+
+.planAmt {
+  font-family: var(--font-display), serif;
+  font-size: 21px;
+  line-height: 1.15;
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
+.planL {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* Share of MRR — a plan's weight is easier to read as a bar than as a ratio. */
+.planBar {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 999px;
+  background: hsla(0, 0%, 100%, 0.06);
+  overflow: hidden;
+}
+
+.planFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+  opacity: 0.75;
+}
+
+.name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.email {
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.yearly {
+  margin-left: 5px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.cancels {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--accent-peach);
+}
+
+.amount {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The total is the number the page exists for — it should read as a total. */
+.totalRow td {
+  border-top: 1px solid var(--hairline-strong);
+  background: hsla(0, 0%, 100%, 0.03);
+  font-weight: 700;
+  color: var(--accent);
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.totalLabel {
+  text-align: right;
+}
+
+.note {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-faint);
+  max-width: 78ch;
+}

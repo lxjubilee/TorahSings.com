@@ -38,11 +38,11 @@ const SECTIONS: AdminSection[] = [
   { href: '/admin/analytics', label: 'Analytics', ready: true },
   { href: '/admin/active-listeners', label: 'Active Listeners', ready: true },
   { href: '/admin/music', label: 'Manage Music', ready: false },
-  { href: '/admin/publish-to-production', label: 'Publish to Production', ready: false },
+  { href: '/admin/publish-to-production', label: 'Publish to Production', ready: true },
   { href: '/admin/pipeline', label: 'Pipeline', ready: true },
   { href: '/admin/awards', label: 'Awards', ready: true },
   { href: '/admin/production-history', label: 'Production History', ready: false },
-  { href: '/admin/subscribers', label: 'Subscribers', ready: false },
+  { href: '/admin/subscribers', label: 'Subscribers', ready: true },
   { href: '/admin/users', label: 'Users & Roles', ready: true },
 ];
 
