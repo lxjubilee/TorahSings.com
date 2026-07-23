@@ -1,3 +1,26 @@
+/* ── Header ────────────────────────────────────────────────────────────── */
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.printBtn {
+  flex: none;
+}
+
+/* The console is screen furniture; a printed report should be the data only. */
+@media print {
+  .tabs,
+  .printBtn,
+  .toolbar {
+    display: none !important;
+  }
+}
+
 .tabs {
   display: flex;
   flex-wrap: wrap;
@@ -8,6 +31,9 @@
 }
 
 .tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   border-radius: 6px;
   font-family: var(--font-body), sans-serif;
@@ -18,6 +44,12 @@
   border: 1px solid transparent;
   cursor: pointer;
   transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.tabIcon {
+  width: 15px;
+  height: 15px;
+  flex: none;
 }
 
 .tab:hover {
@@ -163,4 +195,414 @@
   line-height: 1.55;
   color: var(--ink-body);
   max-width: 80ch;
+}
+
+/* ── "Live on the website" banner ──────────────────────────────────────── */
+
+.liveBanner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px 22px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(120deg, rgba(95, 179, 113, 0.14), rgba(254, 202, 87, 0.06) 70%);
+  border: 1px solid rgba(95, 179, 113, 0.32);
+}
+
+.liveIcon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 10px;
+  color: var(--success);
+  background: rgba(95, 179, 113, 0.16);
+}
+
+.liveIcon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.liveHeadWrap {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.liveHead {
+  font-family: var(--font-display), serif;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--success);
+}
+
+.liveSub {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--accent);
+}
+
+.liveStats {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.liveStat {
+  text-align: right;
+  min-width: 84px;
+}
+
+.liveN {
+  font-family: var(--font-display), serif;
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.liveL {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.liveSep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 34px;
+  background: var(--hairline-strong);
+}
+
+/* ── Hero stat tiles ───────────────────────────────────────────────────── */
+
+.heroRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.heroTile {
+  position: relative;
+  overflow: hidden;
+  padding: 15px 17px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+}
+
+/* The soft disc in the corner — decoration, tinted per tile. */
+.heroTile::after {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.09;
+  pointer-events: none;
+}
+
+.heroTile[data-tone='violet'] { color: #9b8cf0; }
+.heroTile[data-tone='green']  { color: var(--success); }
+.heroTile[data-tone='gold']   { color: var(--accent); }
+.heroTile[data-tone='peach']  { color: var(--accent-peach); }
+
+.heroIcon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: currentColor;
+  margin-bottom: 12px;
+}
+
+.heroIcon svg {
+  width: 17px;
+  height: 17px;
+  /* The chip is the tile's colour; the glyph sits on it in the page ink. */
+  color: var(--bg-deep);
+}
+
+.heroV {
+  font-family: var(--font-display), serif;
+  font-size: 27px;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.heroL {
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.heroH {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+/* ── Topic sections ────────────────────────────────────────────────────── */
+
+.sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+  margin-bottom: 26px;
+  align-items: start;
+}
+
+.section {
+  padding: 15px 17px 17px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 13px;
+}
+
+.sectionIcon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: rgba(254, 202, 87, 0.14);
+}
+
+.sectionIcon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.stat {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: hsla(0, 0%, 100%, 0.035);
+  border: 1px solid var(--hairline);
+}
+
+.statV {
+  font-family: var(--font-display), serif;
+  font-size: 19px;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat[data-tone='gold'] .statV { color: var(--accent); }
+.stat[data-tone='green'] .statV { color: var(--success); }
+
+.statL {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ── Composition bar ───────────────────────────────────────────────────────
+   Two segments, green + gold. NOT the reference's green/red: that pair sits at
+   ΔE 5.3 under deuteranopia — the classic red/green bar nobody with the most
+   common CVD can read. Green/gold measures 12.9, and "in studio" is not an
+   error state anyway. Labels and a legend carry the meaning regardless. */
+
+.ratio {
+  margin-bottom: 10px;
+}
+
+.ratioTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-bottom: 5px;
+}
+
+.ratioTop b {
+  color: var(--ink);
+}
+
+.ratioBar {
+  display: flex;
+  gap: 2px; /* the 2px surface gap between fills */
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: hsla(0, 0%, 100%, 0.05);
+}
+
+.ratioOk {
+  background: var(--success);
+  border-radius: 999px 0 0 999px;
+}
+
+.ratioOther {
+  background: var(--accent);
+  border-radius: 0 999px 999px 0;
+}
+
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.dotOk { background: var(--success); }
+.dotOther { background: var(--accent); }
+
+/* ── Plan bars ─────────────────────────────────────────────────────────── */
+
+.planBar {
+  margin-bottom: 11px;
+}
+
+.planTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-bottom: 5px;
+}
+
+.planAmt {
+  color: var(--success);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.planTrack {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: hsla(0, 0%, 100%, 0.05);
+  overflow: hidden;
+}
+
+.planFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent-rose), var(--accent));
+}
+
+/* ── Top performers ────────────────────────────────────────────────────── */
+
+.subHead {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.performers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.performer {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+  text-align: center;
+}
+
+.performerT {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 10px;
+}
+
+.performerCover {
+  width: 66px;
+  height: 66px;
+  border-radius: 6px;
+  object-fit: cover;
+  margin: 0 auto 9px;
+  display: block;
+  background: var(--bg-panel);
+}
+
+.performerName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.performerArtist {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.performerSub {
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.performerEmpty {
+  padding: 14px 0;
+  font-size: 12px;
+  color: var(--ink-faint);
 }

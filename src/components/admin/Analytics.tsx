@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { hasAudio } from '@/lib/angels';
 import { api } from '@/lib/api';
 import { getAccessToken } from '@/lib/auth';
+import { allCatalogAlbums } from '@/lib/catalog';
 import {
   AdminTable,
   Button,
@@ -29,20 +31,61 @@ import styles from './Analytics.module.css';
 
 type Tab = 'overview' | 'trends' | 'albums' | 'songs' | 'users' | 'ratings' | 'reviews';
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'trends', label: 'Trends' },
-  { key: 'albums', label: 'Albums' },
-  { key: 'songs', label: 'Songs' },
-  { key: 'users', label: 'Users' },
-  { key: 'ratings', label: 'Ratings' },
-  { key: 'reviews', label: 'Reviews' },
+/** Material-style paths, inline so the console carries no icon dependency. */
+const ICN = {
+  overview: 'M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z',
+  trends: 'M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z',
+  albums: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z',
+  songs: 'M12 3v10.55A4 4 0 1014 17V7h4V3h-6z',
+  users: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
+  star: 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
+  reviews: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
+  dollar: 'M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z',
+  play: 'M8 5v14l11-7z',
+  card: 'M20 4H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V6c0-1.11-.89-2-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z',
+  disc: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4zm0-5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z',
+  print: 'M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z',
+} as const;
+
+function Icon({ d, className }: { d: string; className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+
+const TABS: { key: Tab; label: string; icon: string }[] = [
+  { key: 'overview', label: 'Overview', icon: ICN.overview },
+  { key: 'trends', label: 'Trends', icon: ICN.trends },
+  { key: 'albums', label: 'Albums', icon: ICN.albums },
+  { key: 'songs', label: 'Songs', icon: ICN.songs },
+  { key: 'users', label: 'Users', icon: ICN.users },
+  { key: 'ratings', label: 'Ratings', icon: ICN.star },
+  { key: 'reviews', label: 'Reviews', icon: ICN.reviews },
 ];
 
 const n = (v: unknown) => (typeof v === 'number' ? v.toLocaleString() : '—');
 const hrs = (seconds: number) => `${(Math.round((seconds / 3600) * 10) / 10).toLocaleString()}h`;
 const stars = (v: number | null) => (v == null ? '—' : `${v.toFixed(2)}★`);
 const shortDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const money = (cents: number | null | undefined, currency = 'usd') =>
+  cents == null
+    ? '—'
+    : new Intl.NumberFormat('en-US', { style: 'currency', currency: currency.toUpperCase() }).format(cents / 100);
+
+/**
+ * What the live catalogue would have cost through a traditional studio, on
+ * Jubilujah's stated rule of thumb: 12 tracks ≈ 8 months and $35,000. Shown as
+ * "YEARS.MM" — integer years plus two-digit months, not decimal years.
+ */
+function tradProductionLine(songs: number): string {
+  const totalMonths = Math.round((songs * 8) / 12);
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+  const cost = Math.round((songs * 35000) / 12);
+  return `Traditional studio production: ~${years}.${String(months).padStart(2, '0')} years' work (~$${cost.toLocaleString('en-US')})`;
+}
 
 export function Analytics() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -50,6 +93,7 @@ export function Analytics() {
 
   // One cache per tab, so switching back does not refetch.
   const [overview, setOverview] = useState<Record<string, unknown> | null>(null);
+  const [subs, setSubs] = useState<SubscribersResponse | null>(null);
   const [trends, setTrends] = useState<TrendsResponse | null>(null);
   const [ratings, setRatings] = useState<RatingsResponse | null>(null);
   const [reviews, setReviews] = useState<ReviewsResponse | null>(null);
@@ -62,6 +106,9 @@ export function Analytics() {
     setErr(null);
     if (tab === 'overview' && !overview) {
       api.get<Record<string, unknown>>('/api/analytics/overview').then(setOverview).catch(fail);
+      // Revenue lives on the admin router, not the analytics one. It is a
+      // secondary panel, so a failure here must not blank the whole overview.
+      api.get<SubscribersResponse>('/api/admin/subscribers').then(setSubs).catch(() => setSubs(null));
     } else if (tab === 'trends' && !trends) {
       api.get<TrendsResponse>('/api/analytics/trends?days=90').then(setTrends).catch(fail);
     } else if (tab === 'ratings' && !ratings) {
@@ -73,11 +120,17 @@ export function Analytics() {
 
   return (
     <>
-      <SectionTitle>Media analytics</SectionTitle>
-      <SectionSub>
-        Plays, listeners, and reception across the catalogue. Figures come from the playback event log,
-        so they reflect what was actually streamed rather than what was published.
-      </SectionSub>
+      <div className={styles.head}>
+        <div>
+          <SectionTitle>Media analytics</SectionTitle>
+          <SectionSub>Catalogue, audience, revenue and reception — at a glance.</SectionSub>
+        </div>
+        <div className={styles.printBtn}>
+          <Button small onClick={() => window.print()}>
+            <Icon d={ICN.print} className={styles.tabIcon} /> Print / PDF
+          </Button>
+        </div>
+      </div>
 
       <div className={styles.tabs} role="tablist" aria-label="Analytics views">
         {TABS.map((t) => (
@@ -90,6 +143,7 @@ export function Analytics() {
             data-active={tab === t.key ? 'yes' : 'no'}
             onClick={() => setTab(t.key)}
           >
+            <Icon d={t.icon} className={styles.tabIcon} />
             {t.label}
           </button>
         ))}
@@ -97,7 +151,7 @@ export function Analytics() {
 
       {err && <Notice tone="error">{err}</Notice>}
 
-      {!err && tab === 'overview' && <OverviewTab data={overview} />}
+      {!err && tab === 'overview' && <OverviewTab data={overview} subs={subs} />}
       {!err && tab === 'trends' && <TrendsTab data={trends} />}
       {!err && tab === 'albums' && <TableTab key="albums" kind="albums" />}
       {!err && tab === 'songs' && <TableTab key="songs" kind="songs" />}
@@ -110,24 +164,174 @@ export function Analytics() {
 
 /* ── Overview ──────────────────────────────────────────────────────────── */
 
-function Highlight({ label, title, meta }: { label: string; title?: string; meta?: string }) {
-  return (
-    <div className={styles.card}>
-      <div className={styles.cardLabel}>{label}</div>
-      <div className={styles.cardTitle}>{title || '—'}</div>
-      {meta && <div className={styles.cardMeta}>{meta}</div>}
-    </div>
-  );
-}
-
+/** The shared shape of anything the Top Performers row can render. `name`
+ *  covers the listener card, which has a person rather than a title. */
 interface Named {
   title?: string;
   artist?: string;
   album?: string;
+  cover?: string | null;
+  name?: string;
 }
 
-function OverviewTab({ data }: { data: Record<string, unknown> | null }) {
+interface PlanRollup {
+  plan: string;
+  count: number;
+  monthly_cents_each: number;
+  subtotal_cents: number;
+}
+
+interface SubscribersResponse {
+  currency: string;
+  count: number;
+  monthly_total_cents: number;
+  by_plan: PlanRollup[];
+}
+
+/** One figure with an icon chip. `tone` colours the chip and the corner disc. */
+function HeroTile({
+  icon,
+  tone,
+  label,
+  value,
+  hint,
+}: {
+  icon: string;
+  tone: 'violet' | 'green' | 'gold' | 'peach';
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+}) {
+  return (
+    <div className={styles.heroTile} data-tone={tone}>
+      <span className={styles.heroIcon}>
+        <Icon d={icon} />
+      </span>
+      <div className={styles.heroV}>{value}</div>
+      <div className={styles.heroL}>{label}</div>
+      {hint && <div className={styles.heroH}>{hint}</div>}
+    </div>
+  );
+}
+
+function Panel({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
+  return (
+    <section className={styles.section}>
+      <div className={styles.sectionHead}>
+        <span className={styles.sectionIcon}>
+          <Icon d={icon} />
+        </span>
+        <h3 className={styles.sectionTitle}>{title}</h3>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: React.ReactNode; tone?: 'gold' | 'green' }) {
+  return (
+    <div className={styles.stat} data-tone={tone}>
+      <div className={styles.statV}>{value}</div>
+      <div className={styles.statL}>{label}</div>
+    </div>
+  );
+}
+
+/** A two-segment composition bar. Always paired with a legend below it. */
+function Ratio({
+  label,
+  ok,
+  other,
+  okLabel = 'available',
+}: {
+  label: string;
+  ok: number;
+  other: number;
+  okLabel?: string;
+}) {
+  const a = Math.max(0, ok || 0);
+  const b = Math.max(0, other || 0);
+  const total = a + b || 1;
+  const pct = Math.round((a / total) * 100);
+  return (
+    <div className={styles.ratio}>
+      <div className={styles.ratioTop}>
+        <span>{label}</span>
+        <span>
+          <b>{pct}%</b> {okLabel}
+        </span>
+      </div>
+      <div className={styles.ratioBar}>
+        <span className={styles.ratioOk} style={{ width: `${(a / total) * 100}%` }} />
+        <span className={styles.ratioOther} style={{ width: `${(b / total) * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Generic over the item so each caller keeps its own shape — an album carries
+ * `plays`, a listener carries `hours`. Constraining to `Named` (whose fields are
+ * all optional) is enough to read title/artist/cover without casts.
+ */
+function Performer<T extends Named>({
+  title,
+  item,
+  sub,
+  name,
+}: {
+  title: string;
+  item: T | null | undefined;
+  sub: (x: T) => string;
+  name?: (x: T) => string;
+}) {
+  return (
+    <div className={styles.performer}>
+      <div className={styles.performerT}>{title}</div>
+      {item ? (
+        <>
+          {item.cover && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className={styles.performerCover} src={item.cover} alt="" />
+          )}
+          <div className={styles.performerName}>{name ? name(item) : item.title || '—'}</div>
+          {item.artist && <div className={styles.performerArtist}>{item.artist}</div>}
+          <div className={styles.performerSub}>{sub(item)}</div>
+        </>
+      ) : (
+        <div className={styles.performerEmpty}>No data yet.</div>
+      )}
+    </div>
+  );
+}
+
+function OverviewTab({
+  data,
+  subs,
+}: {
+  data: Record<string, unknown> | null;
+  subs: SubscribersResponse | null;
+}) {
+  /**
+   * Album and song counts come from the app's own catalogue, not the API.
+   * `/api/analytics/overview` derives those from the manifest, and MANIFEST_PATH
+   * is unset on TorahSings — so the API reports zero while the site is serving
+   * hundreds of albums. Everything else here (plays, users, ratings) is real
+   * database data and comes from the API.
+   */
+  const catalogue = useMemo(() => {
+    const albums = allCatalogAlbums();
+    const live = albums.filter(hasAudio);
+    return {
+      totalAlbums: albums.length,
+      liveAlbums: live.length,
+      pendingAlbums: albums.length - live.length,
+      liveSongs: live.reduce((sum, a) => sum + a.tracks.length, 0),
+    };
+  }, []);
+
   if (!data) return <Notice>Loading the overview…</Notice>;
+
   const d = data as Record<string, number | null> & {
     most_played_album?: (Named & { plays: number }) | null;
     most_played_song?: (Named & { plays: number }) | null;
@@ -136,47 +340,203 @@ function OverviewTab({ data }: { data: Record<string, unknown> | null }) {
     most_reviewed_album?: (Named & { review_count: number }) | null;
   };
 
+  const registered = d.total_users ?? 0;
+  const active = d.active_users ?? 0;
+
   return (
     <>
-      <KpiRow>
-        <Kpi n={n(d.total_plays)} label="Total plays" />
-        <Kpi n={`${n(d.total_listening_hours)}h`} label="Listening hours" />
-        <Kpi n={n(d.active_users)} label="Active listeners" />
-        <Kpi n={n(d.total_users)} label="Accounts" />
-      </KpiRow>
-      <KpiRow>
-        <Kpi n={n(d.total_albums)} label="Albums" />
-        <Kpi n={n(d.total_songs)} label="Songs" />
-        <Kpi n={n(d.completed_plays)} label="Completed plays" />
-        <Kpi n={n(d.skipped_plays)} label="Skipped plays" />
-      </KpiRow>
-      <KpiRow>
-        <Kpi n={n(d.total_ratings)} label="Ratings" />
-        <Kpi n={n(d.total_reviews)} label="Reviews" />
-        <Kpi n={stars(d.avg_album_rating ?? null)} label="Avg album rating" />
-        <Kpi n={stars(d.avg_song_rating ?? null)} label="Avg song rating" />
-      </KpiRow>
+      <div className={styles.liveBanner}>
+        <span className={styles.liveIcon}>
+          <Icon d={ICN.disc} />
+        </span>
+        <div className={styles.liveHeadWrap}>
+          <div className={styles.liveHead}>Live on the website</div>
+          <div className={styles.liveSub}>{tradProductionLine(catalogue.liveSongs)}</div>
+        </div>
+        <div className={styles.liveStats}>
+          <div className={styles.liveStat}>
+            <div className={styles.liveN}>{n(catalogue.liveAlbums)}</div>
+            <div className={styles.liveL}>Live albums</div>
+          </div>
+          <span className={styles.liveSep} />
+          <div className={styles.liveStat}>
+            <div className={styles.liveN}>{n(catalogue.liveSongs)}</div>
+            <div className={styles.liveL}>Live songs</div>
+          </div>
+          <span className={styles.liveSep} />
+          <div className={styles.liveStat}>
+            <div className={styles.liveN}>{n(catalogue.totalAlbums)}</div>
+            <div className={styles.liveL}>Catalogued</div>
+          </div>
+        </div>
+      </div>
 
-      <div className={styles.highlight}>
-        <Highlight
-          label="Most played album"
-          title={d.most_played_album?.title}
-          meta={d.most_played_album ? `${n(d.most_played_album.plays)} plays` : undefined}
+      <div className={styles.heroRow}>
+        <HeroTile
+          icon={ICN.users}
+          tone="violet"
+          label="Subscribers"
+          value={subs ? n(subs.count) : '—'}
+          hint={subs ? `${n(subs.count)} on paid plans` : 'paid plans'}
         />
-        <Highlight
-          label="Most played song"
-          title={d.most_played_song?.title}
-          meta={d.most_played_song ? `${n(d.most_played_song.plays)} plays` : undefined}
+        <HeroTile
+          icon={ICN.dollar}
+          tone="green"
+          label="Monthly revenue"
+          value={subs ? money(subs.monthly_total_cents, subs.currency) : '—'}
+          hint="recurring / month"
         />
-        <Highlight
-          label="Most active listener"
-          title={d.most_active_listener?.name}
-          meta={d.most_active_listener ? `${n(d.most_active_listener.plays)} plays · ${d.most_active_listener.hours}h` : undefined}
+        <HeroTile
+          icon={ICN.trends}
+          tone="gold"
+          label="Active listeners"
+          value={n(active)}
+          hint={`of ${n(registered)} registered · last 30d`}
         />
-        <Highlight
-          label="Most rated album"
-          title={d.most_rated_album?.title}
-          meta={d.most_rated_album ? `${n(d.most_rated_album.rating_count)} ratings` : undefined}
+        <HeroTile
+          icon={ICN.play}
+          tone="peach"
+          label="Total plays"
+          value={n(d.total_plays)}
+          hint={`${n(d.total_listening_hours)}h listened`}
+        />
+      </div>
+
+      <div className={styles.sections}>
+        <Panel icon={ICN.disc} title="Catalogue">
+          <div className={styles.statGrid}>
+            <Stat label="Total albums" value={n(catalogue.totalAlbums)} />
+            <Stat label="Live songs" value={n(catalogue.liveSongs)} />
+          </div>
+          <Ratio
+            label="Albums"
+            ok={catalogue.liveAlbums}
+            other={catalogue.pendingAlbums}
+            okLabel="live"
+          />
+          <div className={styles.legend}>
+            <span>
+              <i className={`${styles.dot} ${styles.dotOk}`} />
+              Live
+            </span>
+            <span>
+              <i className={`${styles.dot} ${styles.dotOther}`} />
+              Awaiting audio
+            </span>
+          </div>
+        </Panel>
+
+        <Panel icon={ICN.card} title="Subscriptions & revenue">
+          <div className={styles.statGrid}>
+            <Stat label="Subscribers" value={subs ? n(subs.count) : '—'} />
+            <Stat
+              label="Monthly revenue"
+              tone="green"
+              value={subs ? money(subs.monthly_total_cents, subs.currency) : '—'}
+            />
+          </div>
+          {!subs && <Notice>Subscription data unavailable.</Notice>}
+          {subs && subs.by_plan.length === 0 && <Notice>No paying subscribers yet.</Notice>}
+          {subs &&
+            subs.by_plan.map((p) => {
+              const max = Math.max(1, ...subs.by_plan.map((x) => x.subtotal_cents || 0));
+              return (
+                <div className={styles.planBar} key={p.plan}>
+                  <div className={styles.planTop}>
+                    <span>
+                      <strong>{p.plan}</strong> · {n(p.count)}{' '}
+                      {p.count === 1 ? 'subscriber' : 'subscribers'}
+                    </span>
+                    <span className={styles.planAmt}>{money(p.subtotal_cents, subs.currency)}</span>
+                  </div>
+                  <span className={styles.planTrack}>
+                    <span
+                      className={styles.planFill}
+                      style={{ width: `${((p.subtotal_cents || 0) / max) * 100}%` }}
+                    />
+                  </span>
+                </div>
+              );
+            })}
+        </Panel>
+
+        <Panel icon={ICN.users} title="Audience">
+          <div className={styles.statGrid}>
+            <Stat label="Registered" value={n(registered)} />
+            <Stat label="Active · 30d" value={n(active)} />
+            <Stat label="Listening" value={`${n(d.total_listening_hours)}h`} />
+          </div>
+          <Ratio
+            label="Engaged in the last 30 days"
+            ok={active}
+            other={Math.max(0, registered - active)}
+            okLabel="active"
+          />
+          <div className={styles.legend}>
+            <span>
+              <i className={`${styles.dot} ${styles.dotOk}`} />
+              Active
+            </span>
+            <span>
+              <i className={`${styles.dot} ${styles.dotOther}`} />
+              Idle
+            </span>
+          </div>
+        </Panel>
+
+        <Panel icon={ICN.star} title="Engagement">
+          <div className={styles.statGrid}>
+            <Stat label="Total ratings" value={n(d.total_ratings)} />
+            <Stat label="Total reviews" value={n(d.total_reviews)} />
+            <Stat label="Avg album ★" tone="gold" value={stars(d.avg_album_rating ?? null)} />
+            <Stat label="Avg song ★" tone="gold" value={stars(d.avg_song_rating ?? null)} />
+          </div>
+          <Ratio
+            label="Plays heard to the end"
+            ok={d.completed_plays ?? 0}
+            other={d.skipped_plays ?? 0}
+            okLabel="completed"
+          />
+          <div className={styles.legend}>
+            <span>
+              <i className={`${styles.dot} ${styles.dotOk}`} />
+              Completed
+            </span>
+            <span>
+              <i className={`${styles.dot} ${styles.dotOther}`} />
+              Skipped
+            </span>
+          </div>
+        </Panel>
+      </div>
+
+      <h3 className={styles.subHead}>Top performers</h3>
+      <div className={styles.performers}>
+        <Performer
+          title="Most played album"
+          item={d.most_played_album}
+          sub={(x) => `${n(x.plays)} plays`}
+        />
+        <Performer
+          title="Most played song"
+          item={d.most_played_song}
+          sub={(x) => `${n(x.plays)} plays`}
+        />
+        <Performer
+          title="Most active listener"
+          item={d.most_active_listener}
+          name={(x) => x.name ?? '—'}
+          sub={(x) => `${n(x.plays)} plays · ${n(x.hours)}h`}
+        />
+        <Performer
+          title="Most rated album"
+          item={d.most_rated_album}
+          sub={(x) => `${n(x.rating_count)} ratings`}
+        />
+        <Performer
+          title="Most reviewed album"
+          item={d.most_reviewed_album}
+          sub={(x) => `${n(x.review_count)} reviews`}
         />
       </div>
     </>
@@ -482,16 +842,16 @@ function ReviewsTab({ data }: { data: ReviewsResponse | null }) {
         <Kpi n={n(data.pending_moderation)} label="Pending moderation" />
       </KpiRow>
 
-      <div className={styles.highlight}>
-        <Highlight
-          label="Most reviewed album"
-          title={data.most_reviewed_album?.title}
-          meta={data.most_reviewed_album ? `${n(data.most_reviewed_album.review_count)} reviews` : undefined}
+      <div className={styles.performers}>
+        <Performer
+          title="Most reviewed album"
+          item={data.most_reviewed_album}
+          sub={(x) => `${n(x.review_count)} reviews`}
         />
-        <Highlight
-          label="Most reviewed song"
-          title={data.most_reviewed_song?.title}
-          meta={data.most_reviewed_song ? `${n(data.most_reviewed_song.review_count)} reviews` : undefined}
+        <Performer
+          title="Most reviewed song"
+          item={data.most_reviewed_song}
+          sub={(x) => `${n(x.review_count)} reviews`}
         />
       </div>
 

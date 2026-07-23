@@ -1,0 +1,227 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.year {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--bg-panel);
+  border: 1px solid var(--hairline-strong);
+}
+
+.year:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── Category / period cards ───────────────────────────────────────────── */
+
+.periods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.period {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  text-align: left;
+  font-family: var(--font-body), sans-serif;
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.period:hover {
+  border-color: var(--hairline-strong);
+  background: hsla(0, 0%, 100%, 0.04);
+}
+
+.period[data-active='yes'] {
+  border-color: var(--accent);
+  background: rgba(254, 202, 87, 0.09);
+}
+
+.periodTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.periodName {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.periodDesc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  margin-bottom: 10px;
+}
+
+.periodFoot {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.periodN {
+  font-family: var(--font-display), serif;
+  font-size: 20px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.periodL {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.window {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* ── Nominations ───────────────────────────────────────────────────────── */
+
+.nomination {
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+}
+
+.nomHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 7px;
+}
+
+.nomTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.nomBy {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.nomWhen {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.nomReason {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-body);
+  max-width: 84ch;
+}
+
+.groupHead {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── Nominate form ─────────────────────────────────────────────────────── */
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.fieldLabel {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-body);
+}
+
+.select,
+.reason {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg-panel);
+  border: 1px solid var(--hairline-strong);
+}
+
+.reason {
+  resize: vertical;
+  min-height: 140px;
+  line-height: 1.55;
+}
+
+.select:focus,
+.reason:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The 250-char floor is enforced server-side AND by a Postgres CHECK. Showing
+   the shortfall live is the difference between one 422 and none. */
+.counter {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.counter[data-short='yes'] {
+  color: var(--accent-peach);
+}
+
+.counter[data-short='no'] {
+  color: var(--success);
+}
+
+.meter {
+  margin-top: 5px;
+  height: 3px;
+  border-radius: 999px;
+  background: hsla(0, 0%, 100%, 0.07);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent-peach);
+  transition: width 0.15s var(--ease);
+}
+
+.meterFill[data-ok='yes'] {
+  background: var(--success);
+}

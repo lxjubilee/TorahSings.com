@@ -50,3 +50,6 @@ yarn-error.log*
 # Local dev auth database (scripts/local-auth-server.mjs) — never commit accounts.
 .local-auth.db
 .local-auth.db-*
+
+# Personal Claude Code overrides — grants SSH/deploy access; never commit.
+.claude/settings.local.json

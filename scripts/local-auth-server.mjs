@@ -258,6 +258,51 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 
+  -- Mirrors production.award_categories / award_periods / nominations
+  -- (api/src/routes/awards.js). The 250-char justification floor is a CHECK
+  -- constraint in Postgres; here the route enforces it, same as the API does.
+  CREATE TABLE IF NOT EXISTS award_categories (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    rateable_type TEXT NOT NULL,
+    active        INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE TABLE IF NOT EXISTS award_periods (
+    id          TEXT PRIMARY KEY,
+    category_id TEXT NOT NULL REFERENCES award_categories(id) ON DELETE CASCADE,
+    year        INTEGER NOT NULL,
+    opens_at    INTEGER,
+    closes_at   INTEGER,
+    status      TEXT NOT NULL DEFAULT 'open'
+  );
+
+  CREATE TABLE IF NOT EXISTS nominations (
+    id            TEXT PRIMARY KEY,
+    period_id     TEXT NOT NULL REFERENCES award_periods(id) ON DELETE CASCADE,
+    rateable_type TEXT NOT NULL,
+    rateable_id   TEXT NOT NULL,
+    nominator_id  TEXT NOT NULL,
+    reason        TEXT NOT NULL,
+    created_at    INTEGER NOT NULL,
+    -- Matches the API's 409: one nomination per object per period.
+    UNIQUE (period_id, rateable_type, rateable_id, nominator_id)
+  );
+
+  -- Mirrors production.pipeline_history (api/src/routes/pipeline.js). Every
+  -- transition appends a row; the console reads it back as the audit trail.
+  CREATE TABLE IF NOT EXISTS pipeline_history (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    rateable_type  TEXT NOT NULL,
+    rateable_id    TEXT NOT NULL,
+    from_stage     TEXT,
+    to_stage       TEXT NOT NULL,
+    actor_user_id  TEXT,
+    note           TEXT,
+    occurred_at    INTEGER NOT NULL
+  );
+
   -- Mirrors production.pipeline_state (api/src/routes/pipeline.js). Local only:
   -- nothing here writes to it during normal use, so it is seeded once below to
   -- give the operations console something real to render.
@@ -403,6 +448,25 @@ if (db.prepare('SELECT COUNT(*) AS n FROM playback_events').get().n === 0) {
   beat();
   // Well inside the 45s window, so a row never lapses between beats.
   setInterval(beat, 15_000).unref();
+}
+
+// Seed award categories and this year's periods, so the Awards section has
+// something to show. Nominations are left empty on purpose — they are created
+// through the console, which is the path worth exercising.
+if (db.prepare('SELECT COUNT(*) AS n FROM award_categories').get().n === 0) {
+  const cats = [
+    ['Album of the Year', 'The album that best carried the year.', 'album'],
+    ['Song of the Year', 'One song above all others.', 'song'],
+    ['Best Newcomer', 'The strongest first appearance in the catalogue.', 'album'],
+  ];
+  const year = new Date().getFullYear();
+  const insC = db.prepare('INSERT INTO award_categories (id, name, description, rateable_type, active) VALUES (?,?,?,?,1)');
+  const insP = db.prepare('INSERT INTO award_periods (id, category_id, year, opens_at, closes_at, status) VALUES (?,?,?,?,?,?)');
+  for (const [name, desc, type] of cats) {
+    const cid = crypto.randomUUID();
+    insC.run(cid, name, desc, type);
+    insP.run(crypto.randomUUID(), cid, year, Date.UTC(year, 0, 1), Date.UTC(year, 11, 31), 'open');
+  }
 }
 
 // Seed the pipeline once, so the console's Overview and Pipeline sections have
@@ -1129,6 +1193,85 @@ const routes = {
   // Shapes must match the Postgres ones exactly — the console types against
   // them — so each handler below names the endpoint it stands in for.
 
+  // --------------------------------------------------------------- awards ---
+  // Mirrors api/src/routes/awards.js. The GETs are public there too; only the
+  // POST is gated.
+
+  /** GET /api/awards/categories?active=true */
+  'GET /api/awards/categories': (_body, _req, url) => {
+    const onlyActive = url.searchParams.get('active') === 'true';
+    const rows = db
+      .prepare(`SELECT id, name, description, rateable_type, active FROM award_categories ${onlyActive ? 'WHERE active = 1' : ''} ORDER BY name`)
+      .all();
+    return { status: 200, body: rows.map((r) => ({ ...r, active: !!r.active })) };
+  },
+
+  /** POST /api/awards/nominations — 250-char justification, one per object. */
+  'POST /api/awards/nominations': (body, req) => {
+    const user = requireUser(req);
+    const periodId = body?.period_id;
+    const type = body?.rateable_type || body?.type;
+    const id = body?.rateable_id || body?.id;
+    const reason = typeof body?.reason === 'string' ? body.reason : '';
+
+    // NOTE the sense of isUuid here: it returns an error MESSAGE when invalid
+    // and null when the value is fine. Truthy means BAD (see the note at the
+    // playlist route). `!isUuid(x)` would reject every valid uuid.
+    if (isUuid(periodId)) throw new HttpError(400, 'period_id required (uuid)');
+    if (!['song', 'album'].includes(type)) throw new HttpError(400, 'rateable_type must be song or album');
+    if (isUuid(id)) throw new HttpError(400, 'rateable_id required (uuid)');
+
+    const trimmed = reason.trim().length;
+    if (trimmed < 250) {
+      // Same payload the API returns, so the console can show the shortfall.
+      throw new HttpError(422, 'Justification too short', {
+        message: `Justification must be at least 250 characters (after trim). Current: ${trimmed}. Add ${250 - trimmed} more.`,
+        current_length: trimmed,
+        required_length: 250,
+      });
+    }
+    if (!db.prepare('SELECT id FROM award_periods WHERE id = ?').get(periodId)) {
+      throw new HttpError(404, 'period not found');
+    }
+    const dupe = db
+      .prepare('SELECT id FROM nominations WHERE period_id=? AND rateable_type=? AND rateable_id=? AND nominator_id=?')
+      .get(periodId, type, id, user.id);
+    if (dupe) throw new HttpError(409, 'You already nominated this object for this period');
+
+    const nid = crypto.randomUUID();
+    const t = now();
+    db.prepare(`INSERT INTO nominations (id, period_id, rateable_type, rateable_id, nominator_id, reason, created_at)
+                VALUES (?,?,?,?,?,?,?)`).run(nid, periodId, type, id, user.id, reason.trim(), t);
+    audit(user.id, 'award.nominate', { id: nid, period: periodId, target: id });
+    return {
+      status: 201,
+      body: { id: nid, period_id: periodId, rateable_type: type, rateable_id: id, nominator_id: user.id, reason: reason.trim(), created_at: new Date(t).toISOString() },
+    };
+  },
+
+  /** GET /api/awards/nominations?period=&category=&type=&id= */
+  'GET /api/awards/nominations': (_body, _req, url) => {
+    const where = [];
+    const params = [];
+    const q = (k) => url.searchParams.get(k);
+    if (q('period')) { where.push('p.year = ?'); params.push(Number(q('period'))); }
+    if (q('category')) { where.push('p.category_id = ?'); params.push(q('category')); }
+    if (q('type')) { where.push('n.rateable_type = ?'); params.push(q('type')); }
+    if (q('id')) { where.push('n.rateable_id = ?'); params.push(q('id')); }
+    const rows = db
+      .prepare(
+        `SELECT n.id, n.period_id, p.category_id, n.rateable_type, n.rateable_id,
+                n.nominator_id, u.display_name AS nominator_name, n.reason, n.created_at
+           FROM nominations n
+           JOIN award_periods p ON p.id = n.period_id
+           LEFT JOIN users u ON u.id = n.nominator_id
+          ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+          ORDER BY n.created_at DESC`,
+      )
+      .all(...params);
+    return { status: 200, body: rows.map((r) => ({ ...r, created_at: new Date(r.created_at).toISOString() })) };
+  },
+
   // ------------------------------------------------------------ analytics ---
   // Mirrors api/src/routes/analytics.js. Postgres aggregates production.
   // playback_events; here the same aggregates run over the local seed, so the
@@ -1479,6 +1622,11 @@ const PL_ITEMS_BULK = new RegExp(`^/api/me/playlists/(${UUID})/items/bulk$`);
 const PL_ITEM = new RegExp(`^/api/me/playlists/(${UUID})/items/(${UUID})$`);
 const PL_ITEMS = new RegExp(`^/api/me/playlists/(${UUID})/items$`);
 const PL_ONE = new RegExp(`^/api/me/playlists/(${UUID})$`);
+// Awards periods for a year: /api/awards/periods/2026.
+const AWARD_PERIODS = /^\/api\/awards\/periods\/(-?\d+)$/;
+// Pipeline item routes: /:type/:id/transition and /:type/:id/history.
+const PIPE_TRANSITION = new RegExp(`^/api/pipeline/(song|album)/(${UUID})/transition$`);
+const PIPE_HISTORY = new RegExp(`^/api/pipeline/(song|album)/(${UUID})/history$`);
 // Admin user routes. /roles is longer, so it must be matched before the bare id.
 const ADMIN_USER_ROLES = new RegExp(`^/api/admin/users/(${UUID})/roles$`);
 const ADMIN_USER = new RegExp(`^/api/admin/users/(${UUID})$`);
@@ -1706,6 +1854,98 @@ const patternRoutes = [
       db.prepare('DELETE FROM user_playlists WHERE id = ?').run(pl.id);
       audit(user.id, 'playlist.delete', { id: pl.id });
       return { status: 204 };
+    },
+  },
+
+  // ------------------------------------------------------------ awards ---
+
+  /** GET /api/awards/periods/:year — every category's period for that year. */
+  {
+    method: 'GET',
+    re: AWARD_PERIODS,
+    handler: ([, yearStr]) => {
+      const year = Number(yearStr);
+      if (!Number.isInteger(year)) throw new HttpError(400, 'year must be an integer');
+      const rows = db
+        .prepare(
+          `SELECT p.id, p.category_id, c.name AS category_name, c.description AS category_description,
+                  c.rateable_type, p.year, p.opens_at, p.closes_at, p.status
+             FROM award_periods p
+             JOIN award_categories c ON c.id = p.category_id
+            WHERE p.year = ?
+            ORDER BY c.name`,
+        )
+        .all(year);
+      return {
+        status: 200,
+        body: rows.map((r) => ({
+          ...r,
+          opens_at: r.opens_at ? new Date(r.opens_at).toISOString() : null,
+          closes_at: r.closes_at ? new Date(r.closes_at).toISOString() : null,
+        })),
+      };
+    },
+  },
+
+  // ---------------------------------------------------------- pipeline ---
+
+  /** POST /api/pipeline/:type/:id/transition — move an item, append history. */
+  {
+    method: 'POST',
+    re: PIPE_TRANSITION,
+    handler: ([, type, id], body, req) => {
+      // The real route is requireRole('executive'); admin clears that bar.
+      const me = requireAdmin(req);
+      const to = body?.to_stage;
+      if (!PIPELINE_STAGES.includes(to)) {
+        throw new HttpError(400, `to_stage must be one of: ${PIPELINE_STAGES.join(', ')}`);
+      }
+      const note = typeof body?.note === 'string' ? body.note.slice(0, 2000) : null;
+      const cur = db.prepare('SELECT current_stage FROM pipeline_state WHERE rateable_type=? AND rateable_id=?').get(type, id);
+      const from = cur ? cur.current_stage : null;
+      const t = now();
+      db.exec('BEGIN');
+      try {
+        if (cur) {
+          db.prepare('UPDATE pipeline_state SET current_stage=?, entered_stage_at=?, updated_at=? WHERE rateable_type=? AND rateable_id=?')
+            .run(to, t, t, type, id);
+        } else {
+          db.prepare(`INSERT INTO pipeline_state
+              (rateable_type, rateable_id, current_stage, assignee_user_id, entered_stage_at, updated_at)
+              VALUES (?,?,?,NULL,?,?)`).run(type, id, to, t, t);
+        }
+        db.prepare(`INSERT INTO pipeline_history
+            (rateable_type, rateable_id, from_stage, to_stage, actor_user_id, note, occurred_at)
+            VALUES (?,?,?,?,?,?,?)`).run(type, id, from, to, me.id, note, t);
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+      audit(me.id, 'pipeline.transition', { type, id, from, to });
+      return { status: 200, body: { rateable_type: type, rateable_id: id, from_stage: from, to_stage: to } };
+    },
+  },
+
+  /** GET /api/pipeline/:type/:id/history — newest transition first. */
+  {
+    method: 'GET',
+    re: PIPE_HISTORY,
+    handler: ([, type, id], _body, req) => {
+      requireUser(req);
+      const rows = db
+        .prepare(
+          `SELECT h.from_stage, h.to_stage, h.note, h.occurred_at, u.display_name AS actor
+             FROM pipeline_history h
+             LEFT JOIN users u ON u.id = h.actor_user_id
+            WHERE h.rateable_type=? AND h.rateable_id=?
+            ORDER BY h.occurred_at DESC, h.id DESC`,
+        )
+        .all(type, id);
+      return {
+        status: 200,
+        body: rows.map((r) => ({ ...r, occurred_at: new Date(r.occurred_at).toISOString() })),
+      };
     },
   },
 

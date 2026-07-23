@@ -1,0 +1,184 @@
+/* Stage tiles double as the filter control — clicking one narrows the table,
+   which is why they are buttons rather than the read-only Kpi tile. */
+.stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.stage {
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  text-align: left;
+  font-family: var(--font-body), sans-serif;
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+  cursor: pointer;
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.stage:hover {
+  border-color: var(--hairline-strong);
+  background: hsla(0, 0%, 100%, 0.04);
+}
+
+.stage[data-active='yes'] {
+  border-color: var(--accent);
+  background: rgba(254, 202, 87, 0.1);
+}
+
+.stage[data-empty='yes'] {
+  opacity: 0.45;
+}
+
+.stageN {
+  font-family: var(--font-display), serif;
+  font-size: 22px;
+  line-height: 1.1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.stage[data-active='yes'] .stageN {
+  color: var(--accent);
+}
+
+.stageL {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-transform: capitalize;
+}
+
+/* A slim rail showing where the stage sits in the ten-step flow. */
+.rail {
+  margin-top: 7px;
+  height: 3px;
+  border-radius: 999px;
+  background: hsla(0, 0%, 100%, 0.07);
+  overflow: hidden;
+}
+
+.railFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.type {
+  text-transform: capitalize;
+}
+
+/* ── History drawer ────────────────────────────────────────────────────── */
+
+.historyRow td {
+  background: hsla(0, 0%, 100%, 0.02);
+  padding: 0;
+}
+
+.history {
+  padding: 12px 16px 14px;
+}
+
+.historyHead {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+
+.hop {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--ink-body);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.hop:last-child {
+  border-bottom: none;
+}
+
+.hopArrow {
+  color: var(--ink-faint);
+}
+
+.hopWhen {
+  margin-left: auto;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.hopNote {
+  width: 100%;
+  color: var(--ink-muted);
+  font-style: italic;
+}
+
+/* ── Move dialog ───────────────────────────────────────────────────────── */
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.fieldLabel {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-body);
+}
+
+.select,
+.note {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg-panel);
+  border: 1px solid var(--hairline-strong);
+}
+
+.note {
+  resize: vertical;
+  min-height: 66px;
+}
+
+.select:focus,
+.note:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.current {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-bottom: 14px;
+}
