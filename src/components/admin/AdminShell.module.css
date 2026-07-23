@@ -1,0 +1,136 @@
+.shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+  padding-bottom: 72px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 14px;
+  border-right: 1px solid var(--hairline);
+  /* Pinned below the two-row site header so only the detail pane scrolls. */
+  position: sticky;
+  top: 108px;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+}
+
+.navHead {
+  padding: 0 12px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.navLink {
+  padding: 9px 12px;
+  border-radius: 6px;
+  border-left: 3px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--ink-muted);
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.navLink:hover {
+  color: var(--ink);
+  background: hsla(0, 0%, 100%, 0.04);
+}
+
+.navLink[data-active='yes'] {
+  color: var(--accent);
+  background: var(--bg-card);
+  border-left-color: var(--accent);
+}
+
+/* A section that exists in the plan but not yet in the app. Deliberately not a
+   link — dimmed, unclickable, and labelled, so the console never 404s itself. */
+.navPending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border-left: 3px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.navPendingTag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  color: var(--ink-faint);
+  background: hsla(0, 0%, 100%, 0.05);
+}
+
+.detail {
+  min-width: 0;
+}
+
+.gate {
+  padding: 56px 0;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.gateTitle {
+  margin: 0 0 8px;
+  font-family: var(--font-display), serif;
+  font-size: 24px;
+  color: var(--ink);
+}
+
+.gateBody {
+  margin: 0 auto 20px;
+  max-width: 56ch;
+  line-height: 1.6;
+}
+
+/* Below the breakpoint the nav becomes a horizontal strip above the content. */
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .nav {
+    position: static;
+    max-height: none;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 0 0 10px;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .navHead {
+    display: none;
+  }
+
+  .navLink {
+    white-space: nowrap;
+    border-left: none;
+    border-bottom: 3px solid transparent;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .navLink[data-active='yes'] {
+    border-left: none;
+    border-bottom-color: var(--accent);
+  }
+}

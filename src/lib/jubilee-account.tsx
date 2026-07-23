@@ -47,7 +47,16 @@ export interface JubileeSession {
   displayName: string;
   email: string;
   subscription: JubileeSubscription;
+  /**
+   * RBAC roles as `/api/auth/me` reports them, privilege-ordered upstream:
+   * viewer < reviewer < content_editor < executive < admin. Empty when the API
+   * sends none.
+   */
+  roles: string[];
 }
+
+/** The role that opens the admin surface — `requireRole('admin')` on the API. */
+export const ADMIN_ROLE = 'admin';
 
 type Status = 'loading' | 'ready';
 
@@ -55,6 +64,12 @@ interface JubileeContextValue {
   session: JubileeSession | null;
   status: Status;
   entitlement: Entitlement;
+  /**
+   * The signed-in user holds the `admin` role. Presentation only — it decides
+   * what the UI offers, never what the caller may do. Every admin endpoint is
+   * gated server-side by `requireRole('admin')`, which is the actual boundary.
+   */
+  isAdmin: boolean;
   /** True while the local stub is standing in for real SSO. */
   isStub: boolean;
   signIn: () => void;
@@ -138,6 +153,7 @@ export function JubileeAccountProvider({ children }: { children: ReactNode }) {
           displayName: me.user.displayName || me.user.email,
           email: me.user.email,
           subscription: simulatedSubscription(),
+          roles: me.roles ?? [],
         });
       }
     } catch {
@@ -212,6 +228,7 @@ export function JubileeAccountProvider({ children }: { children: ReactNode }) {
       session,
       status,
       entitlement: session?.subscription.status === 'active' ? 'member' : 'guest',
+      isAdmin: session?.roles.includes(ADMIN_ROLE) ?? false,
       isStub,
       signIn,
       signOut,

@@ -1,0 +1,129 @@
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  animation: pulse 2s var(--ease) infinite;
+}
+
+.dot[data-paused='yes'] {
+  background: var(--ink-faint);
+  animation: none;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 48px 1fr auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+  margin-bottom: 8px;
+}
+
+.thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--bg-panel);
+}
+
+.thumbEmpty {
+  display: grid;
+  place-items: center;
+  color: var(--ink-faint);
+}
+
+.who {
+  min-width: 0;
+}
+
+.name {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.song {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.elapsed {
+  font-size: 13px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Equalizer ─────────────────────────────────────────────────────────────
+   Decorative only. The server cannot tap a listener's audio stream, so this
+   animates lively rather than tracking the actual waveform — it is aria-hidden
+   and it stops entirely under prefers-reduced-motion. */
+
+.eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 22px;
+  width: 30px;
+}
+
+.eqBar {
+  flex: 1;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: bounce 900ms var(--ease) infinite alternate;
+  transform-origin: bottom;
+}
+
+@keyframes bounce {
+  from { height: 20%; }
+  to { height: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eqBar {
+    animation: none;
+    height: 55%;
+  }
+
+  .dot {
+    animation: none;
+  }
+}

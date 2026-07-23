@@ -1,0 +1,234 @@
+/* Shared primitives for the admin console.
+   Jubilujah's console leans on global classes (.admin-table, .kpi-row, .notice)
+   plus inline styles. This repo is CSS Modules, so the same vocabulary lives
+   here as components instead — see AdminUI.tsx. */
+
+.sectionTitle {
+  margin: 0 0 6px;
+  font-family: var(--font-display), serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sectionSub {
+  margin: 0 0 20px;
+  max-width: 76ch;
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── KPI tiles ─────────────────────────────────────────────────────────── */
+
+.kpiRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.kpi {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+}
+
+.kpiN {
+  font-family: var(--font-display), serif;
+  font-size: 26px;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpiL {
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ── Notices ───────────────────────────────────────────────────────────── */
+
+.notice {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+  color: var(--ink-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.notice[data-tone='error'] {
+  color: var(--accent-rose);
+  border-color: rgba(233, 69, 96, 0.4);
+  background: rgba(233, 69, 96, 0.08);
+}
+
+.notice[data-tone='ok'] {
+  color: var(--success);
+  border-color: rgba(120, 200, 140, 0.35);
+  background: rgba(120, 200, 140, 0.08);
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────── */
+
+/* The wrapper scrolls, never the page — admin tables are wide by nature. */
+.tableWrap {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--hairline);
+  background: var(--bg-card);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--ink-body);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr:hover td {
+  background: hsla(0, 0%, 100%, 0.02);
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--ink-faint);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.empty {
+  padding: 28px 14px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+/* ── Pills ─────────────────────────────────────────────────────────────── */
+
+.pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink-muted);
+  background: hsla(0, 0%, 100%, 0.06);
+  border: 1px solid var(--hairline);
+}
+
+.pill[data-tone='accent'] {
+  color: var(--accent);
+  background: rgba(254, 202, 87, 0.12);
+  border-color: rgba(254, 202, 87, 0.35);
+}
+
+.pill[data-tone='ok'] {
+  color: var(--success);
+  background: rgba(120, 200, 140, 0.12);
+  border-color: rgba(120, 200, 140, 0.35);
+}
+
+.pill[data-tone='warn'] {
+  color: var(--accent-peach);
+  background: rgba(255, 138, 107, 0.12);
+  border-color: rgba(255, 138, 107, 0.35);
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────── */
+
+.btn {
+  padding: 7px 13px;
+  border-radius: 6px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-body);
+  background: hsla(0, 0%, 100%, 0.06);
+  border: 1px solid var(--hairline-strong);
+  cursor: pointer;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  color: var(--ink);
+  background: hsla(0, 0%, 100%, 0.12);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn[data-variant='primary'] {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn[data-variant='primary']:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+
+.btn[data-variant='danger'] {
+  color: var(--accent-rose);
+  border-color: rgba(233, 69, 96, 0.4);
+}
+
+.btn[data-variant='danger']:hover:not(:disabled) {
+  color: #fff;
+  background: var(--accent-rose);
+  border-color: var(--accent-rose);
+}
+
+.btnSm {
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.btnRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}

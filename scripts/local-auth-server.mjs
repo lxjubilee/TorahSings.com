@@ -230,6 +230,47 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  -- Mirrors production.playback_events (api/src/routes/analytics.js), trimmed to
+  -- the columns the console's seven analytics views actually aggregate. Seeded
+  -- below so the charts have a shape to draw.
+  CREATE TABLE IF NOT EXISTS playback_events (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           TEXT,
+    album_code        TEXT,
+    song_title        TEXT,
+    listening_seconds INTEGER NOT NULL DEFAULT 0,
+    completed         INTEGER NOT NULL DEFAULT 0,
+    skipped           INTEGER NOT NULL DEFAULT 0,
+    started_at        INTEGER NOT NULL
+  );
+
+  -- Mirrors production.now_playing (api/src/routes/admin.js). A row is "live"
+  -- only while updated_at is inside the 45s window, so the console's Active
+  -- Listeners view empties on its own once a session stops reporting in.
+  CREATE TABLE IF NOT EXISTS now_playing (
+    session_id TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    album_code TEXT,
+    song_title TEXT,
+    track_n    INTEGER,
+    ip_address TEXT,
+    started_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  -- Mirrors production.pipeline_state (api/src/routes/pipeline.js). Local only:
+  -- nothing here writes to it during normal use, so it is seeded once below to
+  -- give the operations console something real to render.
+  CREATE TABLE IF NOT EXISTS pipeline_state (
+    rateable_type    TEXT NOT NULL,
+    rateable_id      TEXT NOT NULL,
+    current_stage    TEXT NOT NULL,
+    assignee_user_id TEXT,
+    entered_stage_at INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    PRIMARY KEY (rateable_type, rateable_id)
+  );
+
   -- Mirrors production.user_reviews (api/src/routes/reviews.js). Postgres keeps a
   -- trigger-maintained production.review_summaries alongside it; here the summary
   -- is computed on read instead — the row counts are tiny locally and it removes
@@ -283,6 +324,113 @@ const audit = (userId, action, detail) =>
   db.prepare('INSERT INTO audit (user_id, action, detail, created_at) VALUES (?,?,?,?)')
     .run(userId, action, JSON.stringify(detail ?? {}), now());
 
+// Seed ~90 days of playback so the analytics charts have a real shape rather
+// than a flat line. Deterministic (a small LCG, not Math.random) so every run
+// produces the same series and a changed chart means changed code.
+if (db.prepare('SELECT COUNT(*) AS n FROM playback_events').get().n === 0) {
+  const users = db.prepare('SELECT id FROM users ORDER BY created_at LIMIT 6').all().map((u) => u.id);
+  if (users.length) {
+    const ALBUMS = [
+      ['ANSMX01001EN', ['Light Before the Sun', 'Our Maker Knelt in Dust', 'The Sword We Held Was Mercy']],
+      ['ANSMX01002EN', ['Grief Built the Basket', 'The Second Day Undone']],
+      ['ANSMX02001EN', ['The Wind Was His Remembering', 'Smoke Rose Where the Rain Fell']],
+    ];
+    let s = 20260723;
+    const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+    const ins = db.prepare(
+      `INSERT INTO playback_events
+         (user_id, album_code, song_title, listening_seconds, completed, skipped, started_at)
+       VALUES (?,?,?,?,?,?,?)`,
+    );
+    const DAY = 86_400_000;
+    db.exec('BEGIN');
+    for (let d = 89; d >= 0; d--) {
+      // Weekends run lighter than weekdays, so the day-of-week chart says something.
+      const date = new Date(now() - d * DAY);
+      const weekend = date.getDay() === 0 || date.getDay() === 6;
+      const plays = Math.floor(rnd() * (weekend ? 6 : 14)) + (weekend ? 1 : 3);
+      for (let i = 0; i < plays; i++) {
+        const [code, songs] = ALBUMS[Math.floor(rnd() * ALBUMS.length)];
+        const song = songs[Math.floor(rnd() * songs.length)];
+        const full = 180 + Math.floor(rnd() * 180);
+        const done = rnd() > 0.35;
+        const secs = done ? full : Math.floor(full * (0.1 + rnd() * 0.6));
+        // Cluster listening into waking hours rather than spreading it flat.
+        const hour = 7 + Math.floor(rnd() * 15);
+        const at = new Date(date);
+        at.setHours(hour, Math.floor(rnd() * 60), 0, 0);
+        ins.run(users[Math.floor(rnd() * users.length)], code, song, secs, done ? 1 : 0, done ? 0 : 1, at.getTime());
+      }
+    }
+    db.exec('COMMIT');
+  }
+}
+
+// Three simulated listening sessions, kept warm by a heartbeat.
+//
+// LOCAL DEV ONLY. now_playing rows are live for 45 seconds, so a static seed
+// would go cold before anyone opened the page and the console would sit empty
+// forever. Real rows come from the player reporting in; nothing does that
+// locally, so this stands in for it. The heartbeat also advances the track now
+// and then, which is what makes the view visibly *live* rather than a snapshot.
+{
+  const users = db.prepare('SELECT id FROM users ORDER BY created_at LIMIT 3').all().map((u) => u.id);
+  const NOW_PLAYING_SIM = [
+    ['sim-session-1', 'ANSMX01001EN', ['Light Before the Sun', 'Our Maker Knelt in Dust'], '127.0.0.1'],
+    ['sim-session-2', 'ANSMX01002EN', ['Grief Built the Basket', 'The Second Day Undone'], '192.168.1.24'],
+    ['sim-session-3', 'ANSMX02001EN', ['The Wind Was His Remembering'], '10.0.0.65'],
+  ];
+  const beat = () => {
+    if (!users.length) return;
+    const t = now();
+    NOW_PLAYING_SIM.forEach(([sid, code, songs, ip], i) => {
+      const user = users[i % users.length];
+      const existing = db.prepare('SELECT started_at FROM now_playing WHERE session_id = ?').get(sid);
+      // Advance the track roughly every four minutes of wall clock.
+      const idx = Math.floor(t / 240_000) % songs.length;
+      const started = existing ? existing.started_at : t - (i + 1) * 37_000;
+      db.prepare(
+        `INSERT INTO now_playing
+           (session_id, user_id, album_code, song_title, track_n, ip_address, started_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           song_title = excluded.song_title,
+           track_n    = excluded.track_n,
+           updated_at = excluded.updated_at`,
+      ).run(sid, user, code, songs[idx], idx + 1, ip, started, t);
+    });
+  };
+  beat();
+  // Well inside the 45s window, so a row never lapses between beats.
+  setInterval(beat, 15_000).unref();
+}
+
+// Seed the pipeline once, so the console's Overview and Pipeline sections have
+// something to draw. Real rows come from the studio's transitions; there is no
+// transition endpoint locally, so without this the section is permanently empty
+// and untestable. Guarded on emptiness — it never fights a hand-edited row.
+if (db.prepare('SELECT COUNT(*) AS n FROM pipeline_state').get().n === 0) {
+  const seed = [
+    ['song', '11111111-1111-4111-8111-111111111111', 'concept', 2],
+    ['song', '22222222-2222-4222-8222-222222222222', 'lyrics_drafting', 5],
+    ['song', '33333333-3333-4333-8333-333333333333', 'lyrics_drafting', 9],
+    ['song', '44444444-4444-4444-8444-444444444444', 'song_generation', 14],
+    ['album', '55555555-5555-4555-8555-555555555555', 'qa_review', 21],
+    ['song', '66666666-6666-4666-8666-666666666666', 'final_approval', 30],
+    ['album', '77777777-7777-4777-8777-777777777777', 'published', 44],
+  ];
+  const ins = db.prepare(
+    `INSERT INTO pipeline_state
+       (rateable_type, rateable_id, current_stage, assignee_user_id, entered_stage_at, updated_at)
+     VALUES (?,?,?,NULL,?,?)`,
+  );
+  const DAY = 86_400_000;
+  for (const [type, id, stage, daysAgo] of seed) {
+    const t = now() - daysAgo * DAY;
+    ins.run(type, id, stage, t, t);
+  }
+}
+
 // ------------------------------------------------------------------ reviews ---
 // Mirrors api/src/routes/reviews.js. The DTO shapes below are what
 // src/lib/reviews.ts types against — keep them identical or the web breaks.
@@ -301,6 +449,75 @@ function requireUser(req) {
   if (!u) throw new HttpError(401, 'Authentication required.');
   return u;
 }
+
+/**
+ * The admin gate, matching requireRole('admin') in api/src/middleware/rbac.js:
+ * 401 when there is no session, 403 when there is one without the role. The
+ * console relies on telling those apart, so do not collapse them.
+ */
+function requireAdmin(req) {
+  const u = requireUser(req);
+  const roles = db.prepare('SELECT role FROM user_roles WHERE user_id = ?').all(u.id).map((r) => r.role);
+  if (!roles.includes('admin')) throw new HttpError(403, 'Requires role: admin or higher');
+  return u;
+}
+
+/**
+ * The albums/songs/users analytics tables, aggregated from the local playback
+ * seed. One helper because the three differ only in what they group by — the
+ * search, sort, and pagination contract is identical, and the console types
+ * against a single {total, page, limit, items} shape.
+ */
+function analyticsTable(req, url, kind) {
+  requireAdmin(req);
+  const page = Math.max(1, parseInt(url.searchParams.get('page'), 10) || 1);
+  const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 25));
+  const q = (url.searchParams.get('q') || '').trim().toLowerCase();
+  const SORTS = { plays: 'plays', listeners: 'listeners', listening_seconds: 'seconds', avg_rating: 'plays' };
+  const sort = SORTS[url.searchParams.get('sort')] || 'plays';
+
+  let items;
+  if (kind === 'users') {
+    items = db.prepare(
+      `SELECT u.id AS user_id, u.display_name AS name, u.email,
+              COUNT(pe.id) AS plays, COUNT(DISTINCT pe.song_title) AS songs,
+              COUNT(DISTINCT pe.album_code) AS albums,
+              COALESCE(SUM(pe.listening_seconds),0) AS listening_seconds,
+              MAX(pe.started_at) AS last_listen
+         FROM users u JOIN playback_events pe ON pe.user_id = u.id
+        GROUP BY u.id, u.display_name, u.email
+        ORDER BY plays DESC`,
+    ).all().map((r) => ({ ...r, last_listen: r.last_listen ? new Date(r.last_listen).toISOString() : null }));
+  } else {
+    const col = kind === 'albums' ? 'album_code' : 'song_title';
+    items = db.prepare(
+      `SELECT ${col} AS title, MAX(album_code) AS album,
+              COUNT(*) AS plays, COUNT(DISTINCT user_id) AS listeners,
+              COALESCE(SUM(listening_seconds),0) AS listening_seconds
+         FROM playback_events WHERE ${col} IS NOT NULL
+        GROUP BY ${col}
+        ORDER BY ${sort} DESC`,
+    ).all().map((r) => ({ ...r, artist: 'Sung by the Angels', avg_rating: null }));
+  }
+
+  if (q) {
+    items = items.filter((i) => `${i.title ?? ''} ${i.name ?? ''} ${i.email ?? ''} ${i.album ?? ''}`.toLowerCase().includes(q));
+  }
+  const offset = (page - 1) * limit;
+  return { status: 200, body: { total: items.length, page, limit, items: items.slice(offset, offset + limit) } };
+}
+
+/** The API's liveness window for now_playing: 45 seconds, then a row goes cold. */
+const LIVE_WINDOW_MS = 45_000;
+
+/** Mirrors GRANTABLE_ROLES in api/src/routes/admin.js. `viewer` is implicit. */
+const GRANTABLE_ROLES = ['reviewer', 'content_editor', 'executive', 'admin'];
+
+/** Mirrors STAGES in api/src/routes/pipeline.js — order is the flow of work. */
+const PIPELINE_STAGES = [
+  'concept', 'lyrics_drafting', 'lyrics_approved', 'song_generation', 'qa_review',
+  'engineering', 'sunil_approval', 'final_approval', 'published', 'distributed',
+];
 
 const EMPTY_SUMMARY = (type, id) => ({
   target_type: type,
@@ -905,6 +1122,348 @@ const routes = {
     for (const r of rows) counts[r.song_id] = r.n;
     return { status: 200, body: { counts } };
   },
+
+  // ---------------------------------------------------------------- admin ---
+  // Mirrors the admin surface of the real API (api/src/routes/admin.js and
+  // pipeline.js) closely enough to develop the operations console against.
+  // Shapes must match the Postgres ones exactly — the console types against
+  // them — so each handler below names the endpoint it stands in for.
+
+  // ------------------------------------------------------------ analytics ---
+  // Mirrors api/src/routes/analytics.js. Postgres aggregates production.
+  // playback_events; here the same aggregates run over the local seed, so the
+  // console's seven views can be developed and checked without a warehouse.
+
+  /** GET /api/analytics/overview — the headline figures. */
+  'GET /api/analytics/overview': (_body, req) => {
+    requireAdmin(req);
+    const t = db.prepare(
+      `SELECT COUNT(*) AS plays, COALESCE(SUM(listening_seconds),0) AS seconds,
+              SUM(CASE WHEN completed=1 THEN 1 ELSE 0 END) AS completed,
+              SUM(CASE WHEN skipped=1 THEN 1 ELSE 0 END) AS skipped
+         FROM playback_events`,
+    ).get();
+    const top = (col) => db.prepare(
+      `SELECT ${col} AS id, COUNT(*) AS plays FROM playback_events
+        WHERE ${col} IS NOT NULL GROUP BY ${col} ORDER BY plays DESC LIMIT 1`,
+    ).get();
+    const topAlbum = top('album_code');
+    const topSong = top('song_title');
+    const listener = db.prepare(
+      `SELECT pe.user_id, u.display_name, COUNT(*) AS plays,
+              COALESCE(SUM(pe.listening_seconds),0) AS seconds
+         FROM playback_events pe LEFT JOIN users u ON u.id = pe.user_id
+        GROUP BY pe.user_id, u.display_name ORDER BY plays DESC LIMIT 1`,
+    ).get();
+    const rv = db.prepare(
+      `SELECT COUNT(*) AS ratings,
+              SUM(CASE WHEN body IS NOT NULL AND trim(body) <> '' THEN 1 ELSE 0 END) AS reviews,
+              AVG(CASE WHEN target_type='album' THEN stars END) AS avg_album,
+              AVG(CASE WHEN target_type='song' THEN stars END) AS avg_song
+         FROM reviews WHERE deleted_at IS NULL`,
+    ).get();
+    const r2 = (v) => (v == null ? null : Math.round(Number(v) * 100) / 100);
+    return {
+      status: 200,
+      body: {
+        total_albums: db.prepare('SELECT COUNT(DISTINCT album_code) n FROM playback_events').get().n,
+        total_songs: db.prepare('SELECT COUNT(DISTINCT song_title) n FROM playback_events').get().n,
+        total_users: db.prepare('SELECT COUNT(*) n FROM users').get().n,
+        active_users: db.prepare('SELECT COUNT(DISTINCT user_id) n FROM playback_events').get().n,
+        total_plays: t.plays,
+        total_listening_hours: Math.round((Number(t.seconds) / 360)) / 10,
+        completed_plays: t.completed || 0,
+        skipped_plays: t.skipped || 0,
+        total_ratings: rv.ratings || 0,
+        total_reviews: rv.reviews || 0,
+        avg_album_rating: r2(rv.avg_album),
+        avg_song_rating: r2(rv.avg_song),
+        most_played_album: topAlbum ? { title: topAlbum.id, plays: topAlbum.plays } : null,
+        most_played_song: topSong ? { title: topSong.id, plays: topSong.plays } : null,
+        most_active_listener: listener
+          ? { name: listener.display_name || 'Deleted user', plays: listener.plays, hours: Math.round(Number(listener.seconds) / 360) / 10 }
+          : null,
+        most_rated_album: null,
+        most_reviewed_album: null,
+      },
+    };
+  },
+
+  /** GET /api/analytics/trends — daily/DAU/monthly series + peak buckets. */
+  'GET /api/analytics/trends': (_body, req, url) => {
+    requireAdmin(req);
+    const days = Math.min(730, Math.max(7, parseInt(url.searchParams.get('days'), 10) || 90));
+    const since = now() - days * 86_400_000;
+    const daily = db.prepare(
+      `SELECT date(started_at/1000,'unixepoch') AS day, COUNT(*) AS plays,
+              COALESCE(SUM(listening_seconds),0) AS seconds,
+              SUM(CASE WHEN completed=1 THEN 1 ELSE 0 END) AS completed,
+              SUM(CASE WHEN skipped=1 THEN 1 ELSE 0 END) AS skipped
+         FROM playback_events WHERE started_at >= ?
+        GROUP BY day ORDER BY day`,
+    ).all(since);
+    const dau = db.prepare(
+      `SELECT date(started_at/1000,'unixepoch') AS day, COUNT(DISTINCT user_id) AS users
+         FROM playback_events WHERE started_at >= ? GROUP BY day ORDER BY day`,
+    ).all(since);
+    const monthly = db.prepare(
+      `SELECT strftime('%Y-%m', started_at/1000,'unixepoch') AS month, COUNT(*) AS plays,
+              COALESCE(SUM(listening_seconds),0) AS seconds
+         FROM playback_events GROUP BY month ORDER BY month`,
+    ).all();
+    const peakHours = db.prepare(
+      `SELECT CAST(strftime('%H', started_at/1000,'unixepoch') AS INTEGER) AS hour, COUNT(*) AS plays
+         FROM playback_events GROUP BY hour ORDER BY hour`,
+    ).all();
+    const peakDays = db.prepare(
+      `SELECT CAST(strftime('%w', started_at/1000,'unixepoch') AS INTEGER) AS dow, COUNT(*) AS plays
+         FROM playback_events GROUP BY dow ORDER BY dow`,
+    ).all();
+    return {
+      status: 200,
+      body: {
+        daily: daily.map((d) => ({
+          day: d.day, plays: d.plays,
+          hours: Math.round(Number(d.seconds) / 360) / 10,
+          completed: d.completed || 0, skipped: d.skipped || 0,
+        })),
+        dau,
+        monthly: monthly.map((m) => ({ month: m.month, plays: m.plays, hours: Math.round(Number(m.seconds) / 360) / 10 })),
+        peak_hours: peakHours,
+        peak_days: peakDays,
+      },
+    };
+  },
+
+  /** GET /api/analytics/ratings — distribution + best/worst albums. */
+  'GET /api/analytics/ratings': (_body, req) => {
+    requireAdmin(req);
+    const totals = db.prepare(
+      `SELECT SUM(CASE WHEN target_type='album' THEN 1 ELSE 0 END) AS album_ratings,
+              SUM(CASE WHEN target_type='song' THEN 1 ELSE 0 END) AS song_ratings,
+              AVG(stars) AS avg_all, COUNT(DISTINCT user_id) AS raters
+         FROM reviews WHERE deleted_at IS NULL`,
+    ).get();
+    const distribution = {};
+    for (const s of [1, 2, 3, 4, 5]) distribution[String(s)] = 0;
+    for (const r of db.prepare('SELECT stars, COUNT(*) n FROM reviews WHERE deleted_at IS NULL GROUP BY stars').all()) {
+      distribution[String(r.stars)] = r.n;
+    }
+    return {
+      status: 200,
+      body: {
+        total_album_ratings: totals.album_ratings || 0,
+        total_song_ratings: totals.song_ratings || 0,
+        average_rating: totals.avg_all == null ? null : Math.round(Number(totals.avg_all) * 100) / 100,
+        raters: totals.raters || 0,
+        distribution,
+        highest_rated_albums: [],
+        lowest_rated_albums: [],
+      },
+    };
+  },
+
+  /** GET /api/analytics/reviews — review totals and the latest few. */
+  'GET /api/analytics/reviews': (_body, req) => {
+    requireAdmin(req);
+    const WRITTEN = "body IS NOT NULL AND trim(body) <> '' AND deleted_at IS NULL";
+    const totals = db.prepare(
+      `SELECT SUM(CASE WHEN target_type='album' THEN 1 ELSE 0 END) AS album_reviews,
+              SUM(CASE WHEN target_type='song' THEN 1 ELSE 0 END) AS song_reviews,
+              COUNT(DISTINCT user_id) AS reviewers,
+              AVG(length(body)) AS avg_len
+         FROM reviews WHERE ${WRITTEN}`,
+    ).get();
+    const latest = db.prepare(
+      `SELECT r.target_type, r.stars, r.title, r.body, r.created_at, u.display_name
+         FROM reviews r LEFT JOIN users u ON u.id = r.user_id
+        WHERE ${WRITTEN} ORDER BY r.created_at DESC LIMIT 20`,
+    ).all();
+    return {
+      status: 200,
+      body: {
+        total_album_reviews: totals.album_reviews || 0,
+        total_song_reviews: totals.song_reviews || 0,
+        reviewers: totals.reviewers || 0,
+        avg_review_length: Math.round(Number(totals.avg_len) || 0),
+        pending_moderation: 0,
+        most_reviewed_album: null,
+        most_reviewed_song: null,
+        latest: latest.map((r) => ({
+          title: r.title, target_type: r.target_type, stars: r.stars, body: r.body,
+          by: r.display_name, created_at: new Date(r.created_at).toISOString(),
+        })),
+      },
+    };
+  },
+
+  /** GET /api/analytics/albums|songs|users — paginated, searchable tables. */
+  'GET /api/analytics/albums': (_body, req, url) => analyticsTable(req, url, 'albums'),
+  'GET /api/analytics/songs': (_body, req, url) => analyticsTable(req, url, 'songs'),
+  'GET /api/analytics/users': (_body, req, url) => analyticsTable(req, url, 'users'),
+
+  /** GET /api/analytics/export — the same tables as CSV. */
+  'GET /api/analytics/export': (_body, req, url) => {
+    requireAdmin(req);
+    const kind = ['albums', 'songs', 'users'].includes(url.searchParams.get('kind'))
+      ? url.searchParams.get('kind')
+      : 'albums';
+    const { body } = analyticsTable(req, new URL('http://x/?limit=10000'), kind);
+    const HEAD = {
+      albums: ['Album', 'Plays', 'Unique Listeners', 'Listening Hours'],
+      songs: ['Song', 'Album', 'Plays', 'Unique Listeners', 'Listening Hours'],
+      users: ['User', 'Email', 'Plays', 'Distinct Songs', 'Listening Hours'],
+    }[kind];
+    const rows = body.items.map((x) =>
+      kind === 'albums'
+        ? [x.title, x.plays, x.listeners, (x.listening_seconds / 3600).toFixed(2)]
+        : kind === 'songs'
+          ? [x.title, x.album, x.plays, x.listeners, (x.listening_seconds / 3600).toFixed(2)]
+          : [x.name, x.email, x.plays, x.songs, (x.listening_seconds / 3600).toFixed(2)],
+    );
+    const esc = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    return {
+      status: 200,
+      csv: [HEAD.join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n'),
+      filename: `torahsings-analytics-${kind}.csv`,
+    };
+  },
+
+  /** GET /api/admin/users — every account with its granted roles. */
+  'GET /api/admin/users': (_body, req) => {
+    requireAdmin(req);
+    const rows = db.prepare('SELECT * FROM users ORDER BY created_at').all();
+    const roleRows = db.prepare('SELECT user_id, role FROM user_roles ORDER BY role').all();
+    const byUser = new Map();
+    for (const r of roleRows) {
+      if (!byUser.has(r.user_id)) byUser.set(r.user_id, []);
+      byUser.get(r.user_id).push(r.role);
+    }
+    return {
+      status: 200,
+      body: rows.map((u) => ({
+        id: u.id,
+        email: u.email,
+        display_name: u.display_name,
+        // Postgres keeps first/last as their own columns; the local table only
+        // has display_name, so split it the same way the API composes it.
+        first_name: (u.display_name || '').split(' ')[0] || null,
+        last_name: (u.display_name || '').split(' ').slice(1).join(' ') || null,
+        is_active: !!u.is_active,
+        last_login_at: u.last_login_at ? new Date(u.last_login_at).toISOString() : null,
+        created_at: new Date(u.created_at).toISOString(),
+        roles: byUser.get(u.id) || [],
+      })),
+    };
+  },
+
+  /**
+   * GET /api/admin/active-listeners — sessions seen in the last 45 seconds.
+   *
+   * The window is the whole behaviour: a stale row must drop out on its own,
+   * exactly as `updated_at > NOW() - INTERVAL '45 seconds'` does in Postgres.
+   */
+  'GET /api/admin/active-listeners': (_body, req) => {
+    requireAdmin(req);
+    const cutoff = now() - LIVE_WINDOW_MS;
+    const rows = db
+      .prepare(
+        `SELECT np.session_id, np.album_code, np.song_title, np.track_n, np.ip_address,
+                np.started_at, np.updated_at, u.display_name
+           FROM now_playing np
+           JOIN users u ON u.id = np.user_id
+          WHERE np.updated_at > ?
+          ORDER BY np.updated_at DESC`,
+      )
+      .all(cutoff);
+    const listeners = rows.map((x) => ({
+      session_id: x.session_id,
+      name: x.display_name || 'Deleted user',
+      // Postgres resolves this through geoLookup(ip); there is no geo database
+      // locally, so report the address rather than invent a city.
+      location: x.ip_address || null,
+      album: x.album_code || '—',
+      track: x.track_n ?? null,
+      song: x.song_title || '—',
+      code: x.album_code || null,
+      cover: null,
+      since: new Date(x.started_at).toISOString(),
+    }));
+    return { status: 200, body: { count: listeners.length, listeners } };
+  },
+
+  /** GET /api/admin/audit — identity.audit_log, newest first. */
+  'GET /api/admin/audit': (_body, req) => {
+    requireAdmin(req);
+    const rows = db
+      .prepare(
+        `SELECT a.id, a.action, a.detail, a.created_at, u.display_name AS actor
+           FROM audit a
+           LEFT JOIN users u ON u.id = a.user_id
+          ORDER BY a.created_at DESC, a.id DESC
+          LIMIT 500`,
+      )
+      .all();
+    return {
+      status: 200,
+      body: rows.map((r) => {
+        // Postgres splits this into target_type/target_id/payload columns; the
+        // local table carries one JSON blob, so unpack it to the same shape.
+        let payload = null;
+        try {
+          payload = r.detail ? JSON.parse(r.detail) : null;
+        } catch {
+          payload = null;
+        }
+        return {
+          id: String(r.id),
+          action: r.action,
+          // "playlist.create" -> "playlist"; the real column is a real column.
+          target_type: r.action.includes('.') ? r.action.split('.')[0] : null,
+          target_id: payload?.id ?? null,
+          payload,
+          created_at: new Date(r.created_at).toISOString(),
+          actor: r.actor || null,
+        };
+      }),
+    };
+  },
+
+  /** GET /api/pipeline — production.pipeline_state + stage counts. */
+  'GET /api/pipeline': (_body, req, url) => {
+    // The real route is requireRole('content_editor'); admin clears that bar.
+    requireUser(req);
+    const stage = url.searchParams.get('stage');
+    if (stage && !PIPELINE_STAGES.includes(stage)) throw new HttpError(400, 'invalid stage');
+    const items = db
+      .prepare(
+        `SELECT rateable_type, rateable_id, current_stage, assignee_user_id,
+                entered_stage_at, updated_at
+           FROM pipeline_state
+          ${stage ? 'WHERE current_stage = ?' : ''}
+          ORDER BY updated_at DESC
+          LIMIT 1000`,
+      )
+      .all(...(stage ? [stage] : []));
+    const counts = {};
+    for (const r of db.prepare('SELECT current_stage, COUNT(*) AS n FROM pipeline_state GROUP BY current_stage').all()) {
+      counts[r.current_stage] = r.n;
+    }
+    return {
+      status: 200,
+      body: {
+        items: items.map((i) => ({
+          ...i,
+          entered_stage_at: new Date(i.entered_stage_at).toISOString(),
+          updated_at: new Date(i.updated_at).toISOString(),
+        })),
+        counts,
+      },
+    };
+  },
 };
 
 // ---------------------------------------------------------- pattern routes ---
@@ -920,6 +1479,9 @@ const PL_ITEMS_BULK = new RegExp(`^/api/me/playlists/(${UUID})/items/bulk$`);
 const PL_ITEM = new RegExp(`^/api/me/playlists/(${UUID})/items/(${UUID})$`);
 const PL_ITEMS = new RegExp(`^/api/me/playlists/(${UUID})/items$`);
 const PL_ONE = new RegExp(`^/api/me/playlists/(${UUID})$`);
+// Admin user routes. /roles is longer, so it must be matched before the bare id.
+const ADMIN_USER_ROLES = new RegExp(`^/api/admin/users/(${UUID})/roles$`);
+const ADMIN_USER = new RegExp(`^/api/admin/users/(${UUID})$`);
 
 const patternRoutes = [
   {
@@ -1146,6 +1708,84 @@ const patternRoutes = [
       return { status: 204 };
     },
   },
+
+  // ------------------------------------------------------- admin · users ---
+  // Mirrors api/src/routes/admin.js. Longest path first: /roles must be tested
+  // before the bare /:id, or the shorter pattern swallows it.
+
+  /** PATCH /api/admin/users/:id/roles — set the granted set. */
+  {
+    method: 'PATCH',
+    re: ADMIN_USER_ROLES,
+    handler: ([, id], body, req) => {
+      requireAdmin(req);
+      const target = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+      if (!target) throw new HttpError(404, 'user not found');
+      const asked = Array.isArray(body?.roles) ? body.roles : [];
+      if (asked.some((r) => !GRANTABLE_ROLES.includes(r))) {
+        throw new HttpError(400, `roles must be drawn from: ${GRANTABLE_ROLES.join(', ')}`);
+      }
+      // `viewer` is the implicit baseline the API always re-adds, exactly as
+      // admin.js does with `new Set(['viewer', ...roles])`.
+      const want = new Set(['viewer', ...asked]);
+      const have = new Set(db.prepare('SELECT role FROM user_roles WHERE user_id = ?').all(id).map((r) => r.role));
+      db.exec('BEGIN');
+      try {
+        for (const role of want) {
+          if (!have.has(role)) {
+            db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?,?)').run(id, role);
+          }
+        }
+        for (const role of have) {
+          if (!want.has(role)) {
+            db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role = ?').run(id, role);
+          }
+        }
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+      audit(currentUser(req).id, 'role.set', { id, roles: [...want] });
+      return { status: 200, body: { user_id: id, roles: [...want] } };
+    },
+  },
+
+  /** PATCH /api/admin/users/:id — rename. display_name stays "First Last". */
+  {
+    method: 'PATCH',
+    re: ADMIN_USER,
+    handler: ([, id], body, req) => {
+      requireAdmin(req);
+      const target = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+      if (!target) throw new HttpError(404, 'user not found');
+      const first = typeof body?.first_name === 'string' ? body.first_name.trim().slice(0, 120) : '';
+      const last = typeof body?.last_name === 'string' ? body.last_name.trim().slice(0, 120) : '';
+      const display = [first, last].filter(Boolean).join(' ').trim();
+      if (!display) throw new HttpError(400, 'a first or last name is required');
+      db.prepare('UPDATE users SET display_name = ? WHERE id = ?').run(display, id);
+      audit(currentUser(req).id, 'user.rename', { id, display_name: display });
+      return { status: 200, body: { id, display_name: display, first_name: first || null, last_name: last || null } };
+    },
+  },
+
+  /** DELETE /api/admin/users/:id — hard delete, cascading credentials/roles. */
+  {
+    method: 'DELETE',
+    re: ADMIN_USER,
+    handler: ([, id], _body, req) => {
+      const me = requireAdmin(req);
+      // The real API refuses this too — an admin deleting themselves from the
+      // console is almost always a misclick, and it cannot be undone.
+      if (id === me.id) throw new HttpError(400, 'you cannot delete your own account from here');
+      const target = db.prepare('SELECT id, email FROM users WHERE id = ?').get(id);
+      if (!target) throw new HttpError(404, 'user not found');
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+      db.prepare('DELETE FROM signup_verifications WHERE email = ?').run(target.email);
+      audit(me.id, 'user.delete', { id, email: target.email });
+      return { status: 200, body: { ok: true, deleted: id } };
+    },
+  },
 ];
 
 // ------------------------------------------------------------------- server ---
@@ -1187,6 +1827,17 @@ const server = http.createServer(async (req, res) => {
 
   try {
     const out = handler(body, req, url);
+    // A handler may answer with a file instead of JSON (the analytics CSV
+    // export). It signals that by returning `csv` rather than `body`.
+    if (typeof out.csv === 'string') {
+      res.writeHead(out.status, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-disposition': `attachment; filename="${out.filename || 'export.csv'}"`,
+      });
+      res.end(out.csv);
+      console.log(`  ${out.status}  ${key}  (csv)`);
+      return;
+    }
     res.writeHead(out.status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(out.body));
     console.log(`  ${out.status}  ${key}`);

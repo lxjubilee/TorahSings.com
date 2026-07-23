@@ -31,7 +31,7 @@ function isActive(pathname: string, href: string): boolean {
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const { session, status, signOut } = useJubileeAccount();
+  const { session, status, signOut, isAdmin } = useJubileeAccount();
   const [query, setQuery] = useState('');
 
   const signedIn = status === 'ready' && session !== null;
@@ -58,6 +58,14 @@ export function SiteHeader() {
             >
               AI Bible Chat
             </a>
+
+            {/* Admins only. Rendered after `status === 'ready'` so it appears
+                once, on a known session, rather than flickering in on load. */}
+            {signedIn && isAdmin && (
+              <Link className={`${styles.medialink} ${styles.adminlink}`} href="/admin">
+                Admin
+              </Link>
+            )}
 
             <form
               className={styles.search}

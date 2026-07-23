@@ -73,6 +73,22 @@
   color: #fff;
 }
 
+/* Admin — same size and weight as its neighbour, but gold and boxed, so a
+   privileged link never reads as just another nav item. */
+.adminlink {
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--accent);
+  border: 1px solid rgba(254, 202, 87, 0.35);
+  background: rgba(254, 202, 87, 0.08);
+}
+
+.adminlink:hover {
+  color: #1a1424;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Search bar — JubiLujah jvh-search. */
 .search {
   display: flex;

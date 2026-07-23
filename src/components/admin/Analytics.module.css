@@ -1,0 +1,166 @@
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.tab {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
+}
+
+.tab:hover {
+  color: var(--ink);
+  background: hsla(0, 0%, 100%, 0.04);
+}
+
+.tab[data-active='yes'] {
+  color: var(--accent);
+  background: var(--bg-card);
+  border-color: rgba(254, 202, 87, 0.35);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.search {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: hsla(0, 0%, 100%, 0.05);
+  border: 1px solid var(--hairline-strong);
+}
+
+.search:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Small multiples: one measure per panel, never two scales on one axis. */
+.chartGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.sortable:hover {
+  color: var(--ink);
+}
+
+.sortArrow {
+  color: var(--accent);
+  margin-left: 3px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.highlight {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.card {
+  padding: 13px 15px;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  border: 1px solid var(--hairline);
+}
+
+.cardLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.cardTitle {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.cardMeta {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.reviewRow {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.reviewRow:last-child {
+  border-bottom: none;
+}
+
+.reviewHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.reviewStars {
+  color: var(--accent);
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.reviewTitle {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.reviewBy {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.reviewBody {
+  margin-top: 5px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-body);
+  max-width: 80ch;
+}
