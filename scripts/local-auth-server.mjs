@@ -258,6 +258,67 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 
+  -- Mirrors production.music_album_state / music_song_state / music_activity_log
+  -- / music_sync_runs (api/src/routes/music.js). On production these are filled
+  -- by a sync from the catalogue manifest; here they are seeded from the
+  -- generated catalogue so Manage Music has something real to manage.
+  CREATE TABLE IF NOT EXISTS music_album_state (
+    album_code          TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    artist_name         TEXT,
+    artist_slug         TEXT,
+    category            TEXT,
+    release_year        INTEGER,
+    cover_url           TEXT,
+    cover_present       INTEGER NOT NULL DEFAULT 0,
+    song_count          INTEGER NOT NULL DEFAULT 0,
+    audio_present_count INTEGER NOT NULL DEFAULT 0,
+    audio_missing_count INTEGER NOT NULL DEFAULT 0,
+    metadata_complete   INTEGER NOT NULL DEFAULT 0,
+    visibility          TEXT NOT NULL DEFAULT 'published',
+    present_in_manifest INTEGER NOT NULL DEFAULT 1,
+    published_at        INTEGER,
+    last_synced_at      INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS music_song_state (
+    song_id             TEXT PRIMARY KEY,
+    album_code          TEXT NOT NULL,
+    track_number        INTEGER,
+    title               TEXT NOT NULL,
+    artist_name         TEXT,
+    duration_seconds    INTEGER,
+    mp3_url             TEXT,
+    mp3_available       INTEGER NOT NULL DEFAULT 1,
+    lyrics_available    INTEGER NOT NULL DEFAULT 0,
+    metadata_complete   INTEGER NOT NULL DEFAULT 1,
+    visibility          TEXT NOT NULL DEFAULT 'published',
+    present_in_manifest INTEGER NOT NULL DEFAULT 1,
+    last_synced_at      INTEGER
+  );
+
+  CREATE TABLE IF NOT EXISTS music_activity_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor_user_id  TEXT,
+    actor_name     TEXT,
+    action         TEXT NOT NULL,
+    target_type    TEXT,
+    target_id      TEXT,
+    previous_value TEXT,
+    new_value      TEXT,
+    created_at     INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS music_sync_runs (
+    id          TEXT PRIMARY KEY,
+    trigger     TEXT,
+    status      TEXT,
+    albums_seen INTEGER,
+    songs_seen  INTEGER,
+    started_at  INTEGER NOT NULL,
+    finished_at INTEGER
+  );
+
   -- Mirrors production.subscription_plans / subscriptions (the admin
   -- /subscribers rollup). Annual plans are normalised to a monthly figure on
   -- read, so the total is a true MRR rather than a mix of cadences.
@@ -622,6 +683,102 @@ function analyticsTable(req, url, kind) {
   }
   const offset = (page - 1) * limit;
   return { status: 200, body: { total: items.length, page, limit, items: items.slice(offset, offset + limit) } };
+}
+
+/* ── Manage Music ─────────────────────────────────────────────────────────
+ * production.music_* is populated on the real API by a sync from the catalogue
+ * manifest. There is no manifest locally, so the import reads the generated
+ * catalogue instead — same shape, real titles, and the asset flags reflect what
+ * the catalogue actually knows (an album with no artwork really has no cover).
+ */
+const albumDto = (r) => ({
+  ...r,
+  cover_present: !!r.cover_present,
+  metadata_complete: !!r.metadata_complete,
+  present_in_manifest: !!r.present_in_manifest,
+  published_at: r.published_at ? new Date(r.published_at).toISOString() : null,
+  last_synced_at: r.last_synced_at ? new Date(r.last_synced_at).toISOString() : null,
+});
+
+const songDto = (r) => ({
+  ...r,
+  mp3_available: !!r.mp3_available,
+  lyrics_available: !!r.lyrics_available,
+  metadata_complete: !!r.metadata_complete,
+  present_in_manifest: !!r.present_in_manifest,
+  last_synced_at: r.last_synced_at ? new Date(r.last_synced_at).toISOString() : null,
+});
+
+function logMusic(actor, action, targetType, targetId, prev, next) {
+  db.prepare(
+    `INSERT INTO music_activity_log
+       (actor_user_id, actor_name, action, target_type, target_id, previous_value, new_value, created_at)
+     VALUES (?,?,?,?,?,?,?,?)`,
+  ).run(actor?.id ?? null, actor?.display_name ?? null, action, targetType, targetId, prev, next, now());
+}
+
+/** Upsert the generated catalogue into the music state tables. */
+function importCatalogueIntoMusicState() {
+  let cats = [];
+  try {
+    const s = readFileSync(new URL('../src/content/angels-catalog.ts', import.meta.url), 'utf8');
+    cats = JSON.parse(s.slice(s.indexOf('= [') + 2, s.lastIndexOf(';')));
+  } catch {
+    return { albums: 0, songs: 0 };
+  }
+  const t = now();
+  let albums = 0;
+  let songs = 0;
+  const upA = db.prepare(
+    `INSERT INTO music_album_state
+       (album_code, title, artist_name, artist_slug, category, release_year, cover_url, cover_present,
+        song_count, audio_present_count, audio_missing_count, metadata_complete, visibility,
+        present_in_manifest, published_at, last_synced_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
+     ON CONFLICT(album_code) DO UPDATE SET
+       title=excluded.title, cover_url=excluded.cover_url, cover_present=excluded.cover_present,
+       song_count=excluded.song_count, audio_present_count=excluded.audio_present_count,
+       audio_missing_count=excluded.audio_missing_count, metadata_complete=excluded.metadata_complete,
+       present_in_manifest=1, last_synced_at=excluded.last_synced_at`,
+  );
+  const upS = db.prepare(
+    `INSERT INTO music_song_state
+       (song_id, album_code, track_number, title, artist_name, duration_seconds, mp3_url,
+        mp3_available, lyrics_available, metadata_complete, visibility, present_in_manifest, last_synced_at)
+     VALUES (?,?,?,?,?,?,?,?,0,?,?,1,?)
+     ON CONFLICT(song_id) DO UPDATE SET
+       title=excluded.title, duration_seconds=excluded.duration_seconds,
+       mp3_available=excluded.mp3_available, metadata_complete=excluded.metadata_complete,
+       present_in_manifest=1, last_synced_at=excluded.last_synced_at`,
+  );
+  db.exec('BEGIN');
+  try {
+    for (const c of cats) {
+      for (const a of c.albums) {
+        const hasArt = !!a.art;
+        // A catalogued album with no audio yet is exactly "missing audio".
+        const missing = a.tracks.length === 0 ? 1 : 0;
+        upA.run(
+          a.code, a.title, 'Sung by the Angels', 'sung-by-the-angels', c.title, null,
+          a.art ?? null, hasArt ? 1 : 0, a.tracks.length, a.tracks.length, missing,
+          hasArt ? 1 : 0, a.tracks.length ? 'published' : 'draft', t, t,
+        );
+        albums += 1;
+        for (const tr of a.tracks) {
+          upS.run(
+            `${a.code}:${tr.n}`, a.code, tr.n, tr.title, 'Sung by the Angels',
+            tr.secs ?? null, tr.rel, 1, tr.secs != null ? 1 : 0, 'published', t,
+          );
+          songs += 1;
+        }
+      }
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+  return { albums, songs };
 }
 
 /* ── Publish to Production ────────────────────────────────────────────────
@@ -1626,6 +1783,205 @@ const routes = {
     };
   },
 
+  // ---------------------------------------------------------- music admin ---
+  // Mirrors api/src/routes/music.js over the local music_* tables.
+
+  /** GET /api/admin/music/dashboard — the summary cards. */
+  'GET /api/admin/music/dashboard': (_body, req) => {
+    requireAdmin(req);
+    const a = db.prepare(
+      `SELECT
+         SUM(CASE WHEN present_in_manifest=1 THEN 1 ELSE 0 END) AS total_albums,
+         SUM(CASE WHEN present_in_manifest=1 AND visibility='published' THEN 1 ELSE 0 END) AS published,
+         SUM(CASE WHEN visibility='hidden' THEN 1 ELSE 0 END) AS hidden,
+         SUM(CASE WHEN present_in_manifest=1 AND cover_present=0 THEN 1 ELSE 0 END) AS missing_cover,
+         SUM(CASE WHEN present_in_manifest=1 AND visibility='draft' THEN 1 ELSE 0 END) AS pending_review,
+         SUM(CASE WHEN present_in_manifest=1 AND metadata_complete=0 THEN 1 ELSE 0 END) AS missing_metadata,
+         SUM(CASE WHEN present_in_manifest=0 THEN 1 ELSE 0 END) AS broken_refs,
+         COUNT(DISTINCT CASE WHEN present_in_manifest=1 THEN artist_slug END) AS artists
+       FROM music_album_state`,
+    ).get();
+    const s = db.prepare(
+      `SELECT
+         SUM(CASE WHEN present_in_manifest=1 THEN 1 ELSE 0 END) AS total_songs,
+         SUM(CASE WHEN present_in_manifest=1 AND visibility='published' THEN 1 ELSE 0 END) AS published,
+         SUM(CASE WHEN visibility='hidden' THEN 1 ELSE 0 END) AS hidden,
+         SUM(CASE WHEN present_in_manifest=1 AND mp3_available=0 THEN 1 ELSE 0 END) AS missing_audio,
+         SUM(CASE WHEN present_in_manifest=1 AND metadata_complete=0 THEN 1 ELSE 0 END) AS missing_metadata
+       FROM music_song_state`,
+    ).get();
+    const last = db.prepare('SELECT * FROM music_sync_runs ORDER BY started_at DESC LIMIT 1').get();
+    const num = (v) => Number(v || 0);
+    return {
+      status: 200,
+      body: {
+        cards: {
+          total_albums_cdn: num(a.total_albums), albums_published: num(a.published),
+          albums_hidden: num(a.hidden), albums_missing_cover: num(a.missing_cover),
+          total_songs_cdn: num(s.total_songs), songs_published: num(s.published),
+          songs_hidden: num(s.hidden), songs_missing_audio: num(s.missing_audio),
+          total_artists: num(a.artists), albums_pending_review: num(a.pending_review),
+          albums_missing_metadata: num(a.missing_metadata),
+          songs_missing_metadata: num(s.missing_metadata),
+          broken_references: num(a.broken_refs),
+        },
+        last_sync: last ? { ...last, started_at: new Date(last.started_at).toISOString() } : null,
+        schedule: null,
+        // The flag the console keys its "nothing imported yet" panel off.
+        initialized: num(a.total_albums) + num(a.broken_refs) > 0,
+      },
+    };
+  },
+
+  /** POST /api/admin/music/sync — re-import from the catalogue, log a run. */
+  'POST /api/admin/music/sync': (body, req) => {
+    const me = requireAdmin(req);
+    const probe = ['none', 'missing', 'all'].includes(body?.probe) ? body.probe : 'missing';
+    const t = now();
+    const counts = importCatalogueIntoMusicState();
+    db.prepare(
+      `INSERT INTO music_sync_runs (id, trigger, status, albums_seen, songs_seen, started_at, finished_at)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(crypto.randomUUID(), `manual:${probe}`, 'ok', counts.albums, counts.songs, t, now());
+    logMusic(me, 'sync.run', 'catalog', null, null, probe);
+    return { status: 200, body: { ok: true, ...counts, probe } };
+  },
+
+  /** GET /api/admin/music/sync/runs */
+  'GET /api/admin/music/sync/runs': (_body, req, url) => {
+    requireAdmin(req);
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 25));
+    const rows = db.prepare('SELECT * FROM music_sync_runs ORDER BY started_at DESC LIMIT ?').all(limit);
+    return {
+      status: 200,
+      body: rows.map((r) => ({
+        ...r,
+        started_at: new Date(r.started_at).toISOString(),
+        finished_at: r.finished_at ? new Date(r.finished_at).toISOString() : null,
+      })),
+    };
+  },
+
+  /** GET /api/admin/music/albums — filtered, sorted, paginated. */
+  'GET /api/admin/music/albums': (_body, req, url) => {
+    requireAdmin(req);
+    const where = [];
+    const params = [];
+    const q = (k) => url.searchParams.get(k);
+    if (q('q')) { where.push('(lower(title) LIKE ? OR lower(artist_name) LIKE ? OR lower(album_code) LIKE ?)'); const v = `%${q('q').toLowerCase()}%`; params.push(v, v, v); }
+    if (q('visibility')) { where.push('visibility = ?'); params.push(q('visibility')); }
+    if (q('cover') === 'missing') where.push('cover_present = 0');
+    if (q('cover') === 'present') where.push('cover_present = 1');
+    if (q('audio') === 'missing') where.push('audio_missing_count > 0');
+    if (q('metadata') === 'missing') where.push('metadata_complete = 0');
+    if (q('broken') === '1') where.push('present_in_manifest = 0');
+    else if (q('broken') !== 'all') where.push('present_in_manifest = 1');
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const page = Math.max(1, parseInt(q('page'), 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(q('pageSize'), 10) || 50));
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM music_album_state ${whereSql}`).get(...params).n;
+    const rows = db
+      .prepare(`SELECT * FROM music_album_state ${whereSql} ORDER BY title ASC, album_code ASC LIMIT ? OFFSET ?`)
+      .all(...params, pageSize, (page - 1) * pageSize);
+    return { status: 200, body: { items: rows.map(albumDto), total, page, pageSize } };
+  },
+
+  /** GET /api/admin/music/songs */
+  'GET /api/admin/music/songs': (_body, req, url) => {
+    requireAdmin(req);
+    const where = [];
+    const params = [];
+    const q = (k) => url.searchParams.get(k);
+    if (q('q')) { where.push('(lower(title) LIKE ? OR lower(album_code) LIKE ?)'); const v = `%${q('q').toLowerCase()}%`; params.push(v, v); }
+    if (q('album')) { where.push('album_code = ?'); params.push(q('album')); }
+    if (q('visibility')) { where.push('visibility = ?'); params.push(q('visibility')); }
+    if (q('audio') === 'missing') where.push('mp3_available = 0');
+    where.push('present_in_manifest = 1');
+    const whereSql = `WHERE ${where.join(' AND ')}`;
+    const page = Math.max(1, parseInt(q('page'), 10) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(q('pageSize'), 10) || 50));
+    const total = db.prepare(`SELECT COUNT(*) AS n FROM music_song_state ${whereSql}`).get(...params).n;
+    const rows = db
+      .prepare(`SELECT * FROM music_song_state ${whereSql} ORDER BY album_code ASC, track_number ASC LIMIT ? OFFSET ?`)
+      .all(...params, pageSize, (page - 1) * pageSize);
+    return { status: 200, body: { items: rows.map(songDto), total, page, pageSize } };
+  },
+
+  /** GET /api/admin/music/missing — the asset gaps, grouped. */
+  'GET /api/admin/music/missing': (_body, req) => {
+    requireAdmin(req);
+    const all = (sql) => db.prepare(sql).all();
+    return {
+      status: 200,
+      body: {
+        albums_missing_cover: all(`SELECT album_code, title, artist_name, cover_url FROM music_album_state WHERE present_in_manifest=1 AND cover_present=0 ORDER BY artist_name, title LIMIT 500`),
+        albums_missing_metadata: all(`SELECT album_code, title, artist_name FROM music_album_state WHERE present_in_manifest=1 AND metadata_complete=0 ORDER BY artist_name, title LIMIT 500`),
+        songs_missing_audio: all(`SELECT song_id, album_code, track_number, title, artist_name FROM music_song_state WHERE present_in_manifest=1 AND mp3_available=0 ORDER BY album_code, track_number LIMIT 1000`),
+        songs_missing_metadata: all(`SELECT song_id, album_code, track_number, title FROM music_song_state WHERE present_in_manifest=1 AND metadata_complete=0 ORDER BY album_code, track_number LIMIT 1000`),
+        broken_albums: all(`SELECT album_code, title, artist_name FROM music_album_state WHERE present_in_manifest=0 ORDER BY album_code LIMIT 500`),
+        broken_songs: all(`SELECT song_id, album_code, track_number, title FROM music_song_state WHERE present_in_manifest=0 ORDER BY album_code LIMIT 1000`),
+      },
+    };
+  },
+
+  /** GET /api/admin/music/activity */
+  'GET /api/admin/music/activity': (_body, req, url) => {
+    requireAdmin(req);
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 50));
+    const page = Math.max(1, parseInt(url.searchParams.get('page'), 10) || 1);
+    const total = db.prepare('SELECT COUNT(*) AS n FROM music_activity_log').get().n;
+    const rows = db
+      .prepare('SELECT * FROM music_activity_log ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?')
+      .all(limit, (page - 1) * limit);
+    return {
+      status: 200,
+      body: {
+        items: rows.map((r) => ({ ...r, id: String(r.id), created_at: new Date(r.created_at).toISOString() })),
+        total,
+        page,
+        pageSize: limit,
+      },
+    };
+  },
+
+  /** POST /api/admin/music/bulk — apply one action to many albums. */
+  'POST /api/admin/music/bulk': (body, req) => {
+    const me = requireAdmin(req);
+    const ACTIONS = ['publish', 'hide', 'draft', 'publish_songs', 'hide_songs', 'refresh', 'validate'];
+    const action = body?.action;
+    if (!ACTIONS.includes(action)) throw new HttpError(400, `action must be one of: ${ACTIONS.join(', ')}`);
+    const codes = Array.isArray(body?.album_codes) ? body.album_codes.map(String) : [];
+    if (!codes.length) throw new HttpError(400, 'album_codes required');
+
+    let affected = 0;
+    const VIS = { publish: 'published', hide: 'hidden', draft: 'draft' };
+    db.exec('BEGIN');
+    try {
+      for (const code of codes) {
+        const before = db.prepare('SELECT visibility FROM music_album_state WHERE album_code=?').get(code);
+        if (!before) continue;
+        if (VIS[action]) {
+          db.prepare('UPDATE music_album_state SET visibility=?, last_synced_at=? WHERE album_code=?').run(VIS[action], now(), code);
+          logMusic(me, `album.${action}`, 'album', code, before.visibility, VIS[action]);
+        } else if (action === 'publish_songs' || action === 'hide_songs') {
+          const vis = action === 'publish_songs' ? 'published' : 'hidden';
+          db.prepare('UPDATE music_song_state SET visibility=? WHERE album_code=?').run(vis, code);
+          logMusic(me, `songs.${action}`, 'album', code, null, vis);
+        } else {
+          // refresh / validate re-stamp the row; nothing is fetched locally.
+          db.prepare('UPDATE music_album_state SET last_synced_at=? WHERE album_code=?').run(now(), code);
+          logMusic(me, `album.${action}`, 'album', code, null, null);
+        }
+        affected += 1;
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return { status: 200, body: { action, affected } };
+  },
+
   /**
    * GET /api/admin/publish/candidates — albums with audio on the studio drive
    * that is not fully live yet.
@@ -1872,6 +2228,12 @@ const PL_ITEMS_BULK = new RegExp(`^/api/me/playlists/(${UUID})/items/bulk$`);
 const PL_ITEM = new RegExp(`^/api/me/playlists/(${UUID})/items/(${UUID})$`);
 const PL_ITEMS = new RegExp(`^/api/me/playlists/(${UUID})/items$`);
 const PL_ONE = new RegExp(`^/api/me/playlists/(${UUID})$`);
+// Music admin item routes.
+const MUSIC_ALBUM_VIS = /^\/api\/admin\/music\/albums\/([A-Za-z0-9]+)\/visibility$/;
+// `%` is in the class because a song id may arrive percent-encoded (ids carry a
+// colon locally). Express decodes route params, so the handler decodes too.
+const MUSIC_SONG_VIS = /^\/api\/admin\/music\/songs\/([A-Za-z0-9:_%-]+)\/visibility$/;
+const MUSIC_ALBUM_ACTION = /^\/api\/admin\/music\/albums\/([A-Za-z0-9]+)\/(refresh|validate)$/;
 // Awards periods for a year: /api/awards/periods/2026.
 const AWARD_PERIODS = /^\/api\/awards\/periods\/(-?\d+)$/;
 // Pipeline item routes: /:type/:id/transition and /:type/:id/history.
@@ -2104,6 +2466,64 @@ const patternRoutes = [
       db.prepare('DELETE FROM user_playlists WHERE id = ?').run(pl.id);
       audit(user.id, 'playlist.delete', { id: pl.id });
       return { status: 204 };
+    },
+  },
+
+  // ------------------------------------------------------- music admin ---
+
+  /** PATCH /api/admin/music/albums/:code/visibility */
+  {
+    method: 'PATCH',
+    re: MUSIC_ALBUM_VIS,
+    handler: ([, code], body, req) => {
+      const me = requireAdmin(req);
+      const vis = body?.visibility;
+      if (!['published', 'hidden', 'draft'].includes(vis)) {
+        throw new HttpError(400, 'visibility must be published, hidden or draft');
+      }
+      const row = db.prepare('SELECT visibility FROM music_album_state WHERE album_code=?').get(code);
+      if (!row) throw new HttpError(404, 'album not found');
+      db.prepare('UPDATE music_album_state SET visibility=?, last_synced_at=? WHERE album_code=?').run(vis, now(), code);
+      logMusic(me, 'album.visibility', 'album', code, row.visibility, vis);
+      return { status: 200, body: { album_code: code, visibility: vis } };
+    },
+  },
+
+  /** PATCH /api/admin/music/songs/:id/visibility */
+  {
+    method: 'PATCH',
+    re: MUSIC_SONG_VIS,
+    handler: ([, rawId], body, req) => {
+      const me = requireAdmin(req);
+      let id = rawId;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        /* not encoded; use as-is */
+      }
+      const vis = body?.visibility;
+      if (!['published', 'hidden', 'draft'].includes(vis)) {
+        throw new HttpError(400, 'visibility must be published, hidden or draft');
+      }
+      const row = db.prepare('SELECT visibility FROM music_song_state WHERE song_id=?').get(id);
+      if (!row) throw new HttpError(404, 'song not found');
+      db.prepare('UPDATE music_song_state SET visibility=? WHERE song_id=?').run(vis, id);
+      logMusic(me, 'song.visibility', 'song', id, row.visibility, vis);
+      return { status: 200, body: { song_id: id, visibility: vis } };
+    },
+  },
+
+  /** POST /api/admin/music/albums/:code/{refresh,validate} */
+  {
+    method: 'POST',
+    re: MUSIC_ALBUM_ACTION,
+    handler: ([, code, what], _body, req) => {
+      const me = requireAdmin(req);
+      const row = db.prepare('SELECT album_code FROM music_album_state WHERE album_code=?').get(code);
+      if (!row) throw new HttpError(404, 'album not found');
+      db.prepare('UPDATE music_album_state SET last_synced_at=? WHERE album_code=?').run(now(), code);
+      logMusic(me, `album.${what}`, 'album', code, null, null);
+      return { status: 200, body: { album_code: code, [what === 'refresh' ? 'refreshed' : 'validated']: true } };
     },
   },
 
