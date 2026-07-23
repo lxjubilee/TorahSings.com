@@ -23,8 +23,9 @@
  *
  * WHAT IT IS NOT
  * --------------
- * Dev-only. No rate limiting, no 2FA, no Turnstile, no JubileeInspire delegation,
- * no password reset. It is NOT a substitute for torahsings-api in production.
+ * Dev-only. No rate limiting, no 2FA, no Turnstile, no JubileeInspire delegation.
+ * Password reset works (link printed to this console); it is still NOT a
+ * substitute for torahsings-api in production.
  *
  * RUN
  * ---
@@ -160,6 +161,10 @@ const CODE_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 60 * 1000; // 60 s
 const MAX_RESENDS = 2; // 2 resends => 3 codes total
 const DEFAULT_SIGNUP_ROLE = process.env.DEFAULT_SIGNUP_ROLE || 'content_editor';
+// Password reset — mirrors api/src/config.js (PASSWORD_RESET_TTL_MIN=60,
+// WEB_BASE_URL). The link is printed to this console instead of emailed.
+const RESET_TOKEN_EXPIRY_MS = Number(process.env.PASSWORD_RESET_TTL_MIN || 60) * 60 * 1000;
+const WEB_BASE_URL = process.env.WEB_BASE_URL || 'http://localhost:3000';
 
 // ---------------------------------------------------------------- database ---
 const db = new DatabaseSync(DB_PATH);
@@ -208,6 +213,15 @@ db.exec(`
     expires_at INTEGER NOT NULL,
     revoked_at INTEGER
   );
+  -- Mirrors identity.password_resets (api/src/routes/auth.js). Only the SHA-256
+  -- of the emailed token is stored; the raw token lives only in the reset link.
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used_at    INTEGER,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS audit (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    TEXT,
@@ -233,6 +247,34 @@ db.exec(`
     updated_at    INTEGER NOT NULL,
     deleted_at    INTEGER,
     UNIQUE (target_type, target_id, user_id)
+  );
+
+  -- Mirrors production.user_playlists / production.user_playlist_items
+  -- (api/src/routes/me.js).
+  --
+  -- ONE DELIBERATE DIVERGENCE: Postgres gives user_playlist_items.song_id a real
+  -- FK to catalog.songs, so the real API 404s a song that was never imported.
+  -- There is no catalog mirror here (TorahSings derives its song uuids from the
+  -- album code — see src/lib/ids.ts), so this stores any well-formed uuid. That
+  -- keeps add-to-playlist exercisable locally; it does NOT mean an id that the
+  -- real API would reject will be accepted there.
+  CREATE TABLE IF NOT EXISTS user_playlists (
+    id            TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    description   TEXT,
+    is_public     INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS user_playlist_items (
+    id          TEXT PRIMARY KEY,
+    playlist_id TEXT NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+    song_id     TEXT NOT NULL,
+    position    INTEGER NOT NULL,
+    added_at    INTEGER NOT NULL,
+    UNIQUE (playlist_id, song_id)
   );
 `);
 
@@ -313,6 +355,85 @@ function mineFor(userId, type, id) {
   return r ? reviewDto(r) : null;
 }
 
+// ---------------------------------------------------------------- playlists ---
+// Mirrors api/src/routes/me.js. The DTO shapes below are what
+// src/lib/playlists.ts types against — keep them identical or the web breaks.
+
+/**
+ * The list every user gets. The real API auto-provisions it on first listing and
+ * always returns it FIRST, which is what makes it the default row in the
+ * Add-to-Playlist menu and the top sub-category on the Playlists page.
+ */
+const DEFAULT_PLAYLIST_NAME = 'My Favorites';
+
+function ensureDefaultPlaylist(userId) {
+  const has = db
+    .prepare('SELECT 1 FROM user_playlists WHERE owner_user_id = ? AND name = ?')
+    .get(userId, DEFAULT_PLAYLIST_NAME);
+  if (has) return;
+  const t = now();
+  db.prepare(
+    `INSERT INTO user_playlists (id, owner_user_id, name, description, is_public, created_at, updated_at)
+     VALUES (?,?,?,?,0,?,?)`,
+  ).run(crypto.randomUUID(), userId, DEFAULT_PLAYLIST_NAME, 'Your go-to mix of saved songs.', t, t);
+}
+
+/**
+ * `cover` is always null: resolving it needs the manifest, which local dev does
+ * not have. The client derives the cover from `first_song_id` against its own
+ * catalog instead — the same fallback the real API documents for TorahSings.
+ */
+const playlistDto = (pl) => ({
+  id: pl.id,
+  name: pl.name,
+  description: pl.description,
+  is_public: !!pl.is_public,
+  is_default: pl.name === DEFAULT_PLAYLIST_NAME,
+  item_count: db
+    .prepare('SELECT COUNT(*) AS n FROM user_playlist_items WHERE playlist_id = ?')
+    .get(pl.id).n,
+  first_song_id:
+    db
+      .prepare('SELECT song_id FROM user_playlist_items WHERE playlist_id = ? ORDER BY position LIMIT 1')
+      .get(pl.id)?.song_id ?? null,
+  cover: null,
+  created_at: new Date(pl.created_at).toISOString(),
+  updated_at: new Date(pl.updated_at).toISOString(),
+});
+
+/** Resolve a playlist owned by the caller, or throw the same error the API does. */
+function ownedPlaylist(id, userId) {
+  // isUuid returns an error MESSAGE when invalid and null when it is fine.
+  if (isUuid(id)) throw new HttpError(400, 'invalid playlist id');
+  const pl = db.prepare('SELECT * FROM user_playlists WHERE id = ?').get(id);
+  if (!pl) throw new HttpError(404, 'playlist not found');
+  if (pl.owner_user_id !== userId) throw new HttpError(403, 'not your playlist');
+  return pl;
+}
+
+const touchPlaylist = (id) =>
+  db.prepare('UPDATE user_playlists SET updated_at = ? WHERE id = ?').run(now(), id);
+
+/**
+ * Append one song, ignoring a song already on the list. Returns true when a row
+ * was actually inserted, so the caller can report how many were NEW — the count
+ * the "Added N tracks" confirmation shows.
+ */
+function appendSong(playlistId, songId) {
+  const dup = db
+    .prepare('SELECT 1 FROM user_playlist_items WHERE playlist_id = ? AND song_id = ?')
+    .get(playlistId, songId);
+  if (dup) return false;
+  const next =
+    (db
+      .prepare('SELECT MAX(position) AS m FROM user_playlist_items WHERE playlist_id = ?')
+      .get(playlistId)?.m ?? -1) + 1;
+  db.prepare(
+    'INSERT INTO user_playlist_items (id, playlist_id, song_id, position, added_at) VALUES (?,?,?,?,?)',
+  ).run(crypto.randomUUID(), playlistId, songId, next, now());
+  return true;
+}
+
 // ------------------------------------------------------------------ helpers ---
 class HttpError extends Error {
   constructor(status, message, extra = {}) {
@@ -387,6 +508,15 @@ function deliverCode(email, code, kind) {
   console.log('\n' + '─'.repeat(60));
   console.log('  📧  DEV EMAIL (not sent — no provider configured)');
   console.log(line);
+  console.log('─'.repeat(60) + '\n');
+}
+
+/** Password-reset counterpart of deliverCode — prints the clickable reset link. */
+function deliverResetLink(email, url) {
+  console.log('\n' + '─'.repeat(60));
+  console.log('  📧  DEV EMAIL (not sent — no provider configured)');
+  console.log(`  Password-reset link for ${email}:`);
+  console.log(`  ${url}`);
   console.log('─'.repeat(60) + '\n');
 }
 
@@ -520,6 +650,70 @@ const routes = {
     return { status: 200, body: { tokens: issueTokens(row.user_id) } };
   },
 
+  /**
+   * Forgot password — email a single-use reset link. Anti-enumeration: the
+   * response is ALWAYS the same 200 regardless of whether the email is on file,
+   * so nothing observable reveals account existence. Only password-capable
+   * (credentialed), active users actually get a link. Mirrors the real API's
+   * POST /api/auth/forgot-password (api/src/routes/auth.js).
+   */
+  'POST /api/auth/forgot-password': (body) => {
+    validate(body, { email: isEmail });
+    const email = body.email.trim().toLowerCase();
+    const user = db
+      .prepare(
+        `SELECT u.id, u.email FROM users u
+           JOIN credentials c ON c.user_id = u.id
+          WHERE u.email = ? AND u.is_active = 1`
+      )
+      .get(email);
+    if (user) {
+      const rawToken = crypto.randomBytes(32).toString('base64url');
+      db.prepare(
+        'INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?,?,?,?)'
+      ).run(hashToken(rawToken), user.id, now() + RESET_TOKEN_EXPIRY_MS, now());
+      audit(user.id, 'password.reset_requested', {});
+      deliverResetLink(user.email, `${WEB_BASE_URL}/reset-password?token=${rawToken}`);
+    }
+    // Same body whether or not an account matched.
+    return {
+      status: 200,
+      body: { ok: true, message: 'If an account exists for that email, a reset link has been sent.' },
+    };
+  },
+
+  /**
+   * Reset password — redeem the token, set the new password, revoke every
+   * session. Mirrors the real API: an invalid/expired/used token is a generic
+   * 400. `jiSync` is reported as skipped (no JubileeInspire locally).
+   */
+  'POST /api/auth/reset-password': (body) => {
+    validate(body, { token: (v) => (typeof v === 'string' && v.length >= 20 && v.length <= 200 ? null : 'Invalid'), password: isPassword });
+    const row = db
+      .prepare(
+        `SELECT pr.token_hash, pr.user_id
+           FROM password_resets pr
+           JOIN users u ON u.id = pr.user_id
+          WHERE pr.token_hash = ? AND pr.used_at IS NULL AND pr.expires_at > ? AND u.is_active = 1`
+      )
+      .get(hashToken(body.token), now());
+    if (!row) throw new HttpError(400, 'This reset link is invalid or has expired.');
+
+    db.prepare(
+      `INSERT INTO credentials (user_id, password_hash) VALUES (?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET password_hash = excluded.password_hash`
+    ).run(row.user_id, hashPassword(body.password));
+    // Burn this token and any other outstanding ones for the user.
+    db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL')
+      .run(now(), row.user_id);
+    // Revoke every session so no device keeps a live token.
+    db.prepare('UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL')
+      .run(now(), row.user_id);
+    audit(row.user_id, 'password.reset', {});
+    console.log(`  🔑  password reset completed for user ${row.user_id}`);
+    return { status: 200, body: { ok: true, jiSync: { ok: false, skipped: true } } };
+  },
+
   /** Current user. Returns 200 with authenticated:false when signed out. */
   'GET /api/auth/me': (_body, req) => {
     const auth = req.headers.authorization || '';
@@ -648,6 +842,69 @@ const routes = {
       body: rows.map((r) => ({ ...reviewDto(r), target_type: r.target_type, target_id: r.target_id })),
     };
   },
+
+  // ---- Playlists: fixed paths (these must win over the /:id patterns) --------
+
+  /** The caller's playlists, "My Favorites" first, each with its item count. */
+  'GET /api/me/playlists': (_body, req) => {
+    const user = requireUser(req);
+    ensureDefaultPlaylist(user.id);
+    const rows = db
+      .prepare(
+        `SELECT * FROM user_playlists
+          WHERE owner_user_id = ?
+          ORDER BY (name = ?) DESC, created_at DESC`,
+      )
+      .all(user.id, DEFAULT_PLAYLIST_NAME);
+    return { status: 200, body: rows.map(playlistDto) };
+  },
+
+  /** Create one. 201 + the new row, whose id the client immediately adds to. */
+  'POST /api/me/playlists': (body, req) => {
+    const user = requireUser(req);
+    validate(body, {
+      name: (v) =>
+        typeof v !== 'string' || v.trim().length < 1 || v.trim().length > 200
+          ? 'String must contain at least 1 character(s)'
+          : null,
+    });
+    const t = now();
+    const id = crypto.randomUUID();
+    db.prepare(
+      `INSERT INTO user_playlists (id, owner_user_id, name, description, is_public, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(
+      id,
+      user.id,
+      body.name.trim().slice(0, 200),
+      typeof body.description === 'string' ? body.description.slice(0, 2000) : null,
+      body.is_public ? 1 : 0,
+      t,
+      t,
+    );
+    audit(user.id, 'playlist.create', { id, name: body.name.trim() });
+    return { status: 201, body: playlistDto(db.prepare('SELECT * FROM user_playlists WHERE id = ?').get(id)) };
+  },
+
+  /**
+   * Distinct song ids across every playlist the caller owns, with a per-song
+   * count — drives the "already added ✓" tick without opening a menu.
+   */
+  'GET /api/me/playlist-song-ids': (_body, req) => {
+    const user = requireUser(req);
+    const rows = db
+      .prepare(
+        `SELECT pi.song_id, COUNT(*) AS n
+           FROM user_playlist_items pi
+           JOIN user_playlists pl ON pl.id = pi.playlist_id
+          WHERE pl.owner_user_id = ?
+          GROUP BY pi.song_id`,
+      )
+      .all(user.id);
+    const counts = {};
+    for (const r of rows) counts[r.song_id] = r.n;
+    return { status: 200, body: { counts } };
+  },
 };
 
 // ---------------------------------------------------------- pattern routes ---
@@ -657,6 +914,12 @@ const routes = {
 const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
 const TARGET = new RegExp(`^/api/reviews/(album|song)/(${UUID})$`);
 const TARGET_SUMMARY = new RegExp(`^/api/reviews/(album|song)/(${UUID})/summary$`);
+// Playlists. Longest first: /items/bulk must be tested before /items, and both
+// before the bare /:id — otherwise the shorter pattern swallows them.
+const PL_ITEMS_BULK = new RegExp(`^/api/me/playlists/(${UUID})/items/bulk$`);
+const PL_ITEM = new RegExp(`^/api/me/playlists/(${UUID})/items/(${UUID})$`);
+const PL_ITEMS = new RegExp(`^/api/me/playlists/(${UUID})/items$`);
+const PL_ONE = new RegExp(`^/api/me/playlists/(${UUID})$`);
 
 const patternRoutes = [
   {
@@ -747,6 +1010,140 @@ const patternRoutes = [
       db.prepare(`UPDATE reviews SET deleted_at=? WHERE target_type=? AND target_id=? AND user_id=? AND deleted_at IS NULL`)
         .run(now(), type, id, user.id);
       return { status: 200, body: { deleted: true, summary: summaryFor(type, id) } };
+    },
+  },
+
+  // ---- Playlists -----------------------------------------------------------
+
+  /**
+   * Bulk add — a whole album in one call. Songs already on the list are skipped,
+   * and `added` counts only the NEW ones, which is what the menu reports back
+   * ("Added 7 tracks." vs "Already in that playlist.").
+   */
+  {
+    method: 'POST',
+    re: PL_ITEMS_BULK,
+    handler: ([, id], body, req) => {
+      const user = requireUser(req);
+      const pl = ownedPlaylist(id, user.id);
+      const ids = Array.isArray(body?.song_ids) ? body.song_ids : [];
+      if (!ids.length || ids.length > 100) {
+        throw new HttpError(400, 'song_ids must hold between 1 and 100 ids.');
+      }
+      if (ids.some((s) => isUuid(s))) throw new HttpError(400, 'song_ids must all be uuids.');
+      // One transaction, as the real API does — a half-added album is worse
+      // than none, and node:sqlite gives us this for free.
+      let added = 0;
+      db.exec('BEGIN');
+      try {
+        for (const sid of ids) if (appendSong(pl.id, sid)) added += 1;
+        touchPlaylist(pl.id);
+        db.exec('COMMIT');
+      } catch (e) {
+        db.exec('ROLLBACK');
+        throw e;
+      }
+      audit(user.id, 'playlist.bulk_add', { playlist: pl.id, added, total: ids.length });
+      return { status: 200, body: { playlist_id: pl.id, added, total: ids.length } };
+    },
+  },
+
+  /** Add a single song to the end. A duplicate is a 200, not an error. */
+  {
+    method: 'POST',
+    re: PL_ITEMS,
+    handler: ([, id], body, req) => {
+      const user = requireUser(req);
+      const pl = ownedPlaylist(id, user.id);
+      validate(body, { song_id: isUuid });
+      const inserted = appendSong(pl.id, body.song_id);
+      touchPlaylist(pl.id);
+      if (!inserted) {
+        return { status: 200, body: { playlist_id: pl.id, song_id: body.song_id, duplicate: true } };
+      }
+      const row = db
+        .prepare('SELECT * FROM user_playlist_items WHERE playlist_id = ? AND song_id = ?')
+        .get(pl.id, body.song_id);
+      return {
+        status: 201,
+        body: { ...row, added_at: new Date(row.added_at).toISOString() },
+      };
+    },
+  },
+
+  /** Remove one item. */
+  {
+    method: 'DELETE',
+    re: PL_ITEM,
+    handler: ([, id, itemId], _body, req) => {
+      const user = requireUser(req);
+      const pl = ownedPlaylist(id, user.id);
+      db.prepare('DELETE FROM user_playlist_items WHERE id = ? AND playlist_id = ?').run(itemId, pl.id);
+      touchPlaylist(pl.id);
+      return { status: 204 };
+    },
+  },
+
+  /**
+   * Playlist detail with its ordered items. The real API joins catalog.songs for
+   * titles and the manifest for urls; neither exists here, so the song ids are
+   * returned bare and the client resolves them against its own catalog.
+   */
+  {
+    method: 'GET',
+    re: PL_ONE,
+    handler: ([, id], _body, req) => {
+      const user = requireUser(req);
+      const pl = ownedPlaylist(id, user.id);
+      const items = db
+        .prepare('SELECT * FROM user_playlist_items WHERE playlist_id = ? ORDER BY position')
+        .all(pl.id);
+      return {
+        status: 200,
+        body: {
+          ...playlistDto(pl),
+          items: items.map((it) => ({
+            id: it.id,
+            song_id: it.song_id,
+            position: it.position,
+            added_at: new Date(it.added_at).toISOString(),
+            cover: null,
+            url: null,
+          })),
+        },
+      };
+    },
+  },
+
+  /** Rename / description / visibility. */
+  {
+    method: 'PATCH',
+    re: PL_ONE,
+    handler: ([, id], body, req) => {
+      const user = requireUser(req);
+      const pl = ownedPlaylist(id, user.id);
+      const name =
+        typeof body?.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 200) : pl.name;
+      const description =
+        body?.description === undefined ? pl.description : (body.description || null);
+      const isPublic = body?.is_public === undefined ? pl.is_public : body.is_public ? 1 : 0;
+      db.prepare(
+        'UPDATE user_playlists SET name = ?, description = ?, is_public = ?, updated_at = ? WHERE id = ?',
+      ).run(name, description, isPublic, now(), pl.id);
+      return { status: 200, body: playlistDto(db.prepare('SELECT * FROM user_playlists WHERE id = ?').get(pl.id)) };
+    },
+  },
+
+  /** Delete a playlist. Items go with it (ON DELETE CASCADE). */
+  {
+    method: 'DELETE',
+    re: PL_ONE,
+    handler: ([, id], _body, req) => {
+      const user = requireUser(req);
+      const pl = ownedPlaylist(id, user.id);
+      db.prepare('DELETE FROM user_playlists WHERE id = ?').run(pl.id);
+      audit(user.id, 'playlist.delete', { id: pl.id });
+      return { status: 204 };
     },
   },
 ];

@@ -14,7 +14,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useAudioActions } from '@/components/audio/AudioProvider';
 import { CelestialArt } from '@/components/system/CelestialArt';
-import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
+import { albumPlayables, artUrl, hasAudio, type CatalogAlbum } from '@/lib/angels';
 import { showAuthGate } from '@/lib/auth-gate';
 import { albumUuid, songUuid } from '@/lib/ids';
 import { AddToPlaylist } from '@/components/album/AddToPlaylist';
@@ -221,7 +221,7 @@ function PreviewCard({
       <Link href={`/album/${album.code}`} className={styles.cover} aria-label={`Open ${album.title}`}>
         {album.art ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={album.art} alt="" loading="lazy" decoding="async" />
+          <img src={artUrl(album.art)} alt="" loading="lazy" decoding="async" />
         ) : (
           <CelestialArt
             seed={album.code}

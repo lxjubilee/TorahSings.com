@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAudio } from '@/components/audio/AudioProvider';
 import { CelestialArt } from '@/components/system/CelestialArt';
 import { StarRating } from '@/components/system/StarRating';
-import { albumPlayables, hasAudio, type CatalogAlbum } from '@/lib/angels';
+import { albumPlayables, artUrl, hasAudio, type CatalogAlbum } from '@/lib/angels';
 import { ApiError } from '@/lib/api';
+import { clock } from '@/lib/format';
 import { albumUuid, songUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import { showAuthGate } from '@/lib/auth-gate';
@@ -113,7 +114,14 @@ export function CatalogAlbumDetail({
 
   // Summaries keyed "album:<uuid>" / "song:<uuid>", loaded in one batch.
   const [summaries, setSummaries] = useState<Record<string, ReviewSummary>>({});
-  const [rateTarget, setRateTarget] = useState<{ type: TargetType; n: number; label: string } | null>(null);
+  // `stars` is set when the visitor picked a star inline rather than pressing a
+  // "Rate" button — it pre-selects that value in the composer.
+  const [rateTarget, setRateTarget] = useState<{
+    type: TargetType;
+    n: number;
+    label: string;
+    stars?: number;
+  } | null>(null);
 
   const targets = useMemo<Target[]>(
     () => [
@@ -143,13 +151,16 @@ export function CatalogAlbumDetail({
   /**
    * Writing a rating is requireAuth, so a guest is sent to sign in and returned
    * here rather than shown a dialog that can only 401.
+   *
+   * `stars` carries the star the visitor actually clicked, so picking 4 stars on
+   * a track row opens the composer on 4 instead of making them choose twice.
    */
-  const openRate = (type: TargetType, n: number, label: string) => {
+  const openRate = (type: TargetType, n: number, label: string, stars?: number) => {
     if (!session) {
       signIn();
       return;
     }
-    setRateTarget({ type, n, label });
+    setRateTarget({ type, n, label, stars });
   };
 
   /** The API returns the recalculated summary, so we patch it in rather than refetch. */
@@ -207,7 +218,7 @@ export function CatalogAlbumDetail({
             <div className={styles.coverWrap}>
               {album.art ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={album.art} alt="" decoding="async" />
+                <img src={artUrl(album.art)} alt="" decoding="async" />
               ) : (
                 <CelestialArt
                   seed={album.code}
@@ -241,7 +252,10 @@ export function CatalogAlbumDetail({
                 )}
               </div>
 
-              <AlbumRating summary={albumSummary} onRate={() => openRate('album', 0, album.title)} />
+              <AlbumRating
+                summary={albumSummary}
+                onRate={(stars) => openRate('album', 0, album.title, stars)}
+              />
             </div>
           </div>
 
@@ -316,7 +330,8 @@ export function CatalogAlbumDetail({
                         <span className={styles.ttitle}>{t.title}</span>
                         <SongRating
                           summary={songSummary(t.n)}
-                          onRate={() => openRate('song', t.n, t.title)}
+                          label={t.title}
+                          onRate={(stars) => openRate('song', t.n, t.title, stars)}
                         />
                       </span>
                       <span className={styles.tadd}>
@@ -332,7 +347,7 @@ export function CatalogAlbumDetail({
                           <Icon d={added.has(t.n) ? ICON.check : ICON.add} />
                         </button>
                       </span>
-                      <span className={styles.tdur}>--:--</span>
+                      <span className={styles.tdur}>{t.secs ? clock(t.secs) : '--:--'}</span>
                     </li>
                   );
                 })}
@@ -367,7 +382,14 @@ export function CatalogAlbumDetail({
               type={rateTarget.type}
               id={rateTarget.type === 'album' ? albumUuid(album.code) : songUuid(album.code, rateTarget.n)}
               label={rateTarget.label}
-              initial={mine ? { stars: mine.stars, title: mine.title, body: mine.body } : null}
+              initial={{
+                // The star just clicked wins over the stored one — that click IS
+                // the new choice. Title/body always come from the existing
+                // review, per the note above.
+                stars: rateTarget.stars ?? mine?.stars ?? 0,
+                title: mine?.title ?? null,
+                body: mine?.body ?? null,
+              }}
               onSaved={(summary) => onRated(rateTarget.type, rateTarget.n, summary)}
               onClose={() => setRateTarget(null)}
             />
@@ -523,41 +545,42 @@ function RateDialog({
 }
 
 /**
- * JubiLujah's `rv-album-rating` box. There's no ratings backend yet, so this is
- * an honest local control: the visitor's own star rating, persisted in
- * localStorage — no invented aggregate score.
+ * JubiLujah's `rv-album-rating` box: the aggregate from review_summaries, this
+ * visitor's own stars, and the way into the composer.
+ *
+ * The stars are the shared StarRating in interactive mode — the same widget the
+ * track rows and the dialog use, so hover-preview and click-to-choose behave
+ * identically everywhere. Clicking star N opens the composer with N already
+ * chosen; it does not save on its own, because a bare stars-only write would
+ * blank the title and body of an existing review (see the `mine` note above).
  */
-function AlbumRating({ summary, onRate }: { summary: ReviewSummary | null; onRate: () => void }) {
-  const [hover, setHover] = useState(0);
+function AlbumRating({
+  summary,
+  onRate,
+}: {
+  summary: ReviewSummary | null;
+  /** A star click passes the chosen value; the buttons below pass nothing. */
+  onRate: (stars?: number) => void;
+}) {
   const [showReviews, setShowReviews] = useState(false);
-  const starsRef = useRef<HTMLDivElement>(null);
 
   // The aggregate across everyone; `mine` is this visitor's own stars.
   const average = summary?.average ?? 0;
   const count = summary?.rating_count ?? 0;
   const rating = summary?.mine?.stars ?? 0;
 
-  // Hovering previews your own rating; otherwise the box shows the aggregate.
-  const shown = hover || rating || average;
-
   return (
     <div className={styles.ratingBox}>
       <div className={styles.ratingMain}>
-        <div className={styles.stars} ref={starsRef} onMouseLeave={() => setHover(0)}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <button
-              key={i}
-              type="button"
-              className={styles.star}
-              data-on={i <= shown ? 'yes' : 'no'}
-              onMouseEnter={() => setHover(i)}
-              onClick={onRate}
-              aria-label={`Rate ${i} star${i > 1 ? 's' : ''}`}
-            >
-              ★
-            </button>
-          ))}
-        </div>
+        {/* Resting state shows your own rating when you have one, else the
+            aggregate; hovering previews the star under the cursor. */}
+        <StarRating
+          value={rating || average}
+          selected={rating}
+          onChange={(n) => onRate(n)}
+          size="md"
+          ariaLabel="Rate this album"
+        />
         <span className={`${styles.ratingNum} ${count ? '' : styles.ratingNumNone}`}>
           {count ? average.toFixed(1) : '—'}
         </span>
@@ -569,7 +592,7 @@ function AlbumRating({ summary, onRate }: { summary: ReviewSummary | null; onRat
       </div>
 
       <div className={styles.ratingActions}>
-        <button type="button" className={styles.rateBtn} onClick={onRate}>
+        <button type="button" className={styles.rateBtn} onClick={() => onRate()}>
           {rating ? 'Update rating' : 'Rate this Album'}
         </button>
         <button
@@ -592,7 +615,7 @@ function MiniRow({ item, active }: { item: MiniAlbum; active: boolean }) {
       <span className={styles.miniThumb} style={{ backgroundColor: `hsl(${item.hue} 45% 22%)` }}>
         {item.art ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.art} alt="" loading="lazy" decoding="async" />
+          <img src={artUrl(item.art)} alt="" loading="lazy" decoding="async" />
         ) : (
           <span className={styles.miniGlyph} aria-hidden="true">
             {item.glyph ?? '♪'}

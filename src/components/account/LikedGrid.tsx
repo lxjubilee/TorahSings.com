@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { CelestialArt } from '@/components/system/CelestialArt';
-import { hasAudio } from '@/lib/angels';
+import { artUrl, hasAudio } from '@/lib/angels';
 import { allCatalogAlbums } from '@/lib/catalog';
 import { albumUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
@@ -84,7 +84,7 @@ export function LikedGrid() {
           <div className={styles.art}>
             {a.art ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img className={styles.artImg} src={a.art} alt="" loading="lazy" decoding="async" />
+              <img className={styles.artImg} src={artUrl(a.art)} alt="" loading="lazy" decoding="async" />
             ) : (
               <CelestialArt seed={a.code} hue={a.hue} topic={a.book} glyph={a.glyph} ratio="1 / 1" />
             )}

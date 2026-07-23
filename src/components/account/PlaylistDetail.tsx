@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAudio, type PlayableTrack } from '@/components/audio/AudioProvider';
-import { mediaUrl, type CatalogAlbum } from '@/lib/angels';
+import { artUrl, mediaUrl, type CatalogAlbum } from '@/lib/angels';
 import { allCatalogAlbums } from '@/lib/catalog';
 import { songUuid } from '@/lib/ids';
 import { useJubileeAccount } from '@/lib/jubilee-account';
@@ -110,7 +110,8 @@ export function PlaylistDetail({ id }: { id: string }) {
   if (error) return <p className={styles.state}>That playlist could not be found.</p>;
   if (!detail) return <p className={styles.loading}>Loading playlist…</p>;
 
-  const firstCover = detail.items.map((i) => bySongId.get(i.song_id)?.album.art).find(Boolean) ?? null;
+  const firstArt = detail.items.map((i) => bySongId.get(i.song_id)?.album.art).find(Boolean) ?? null;
+  const firstCover = firstArt ? artUrl(firstArt) : null;
 
   return (
     <section className={styles.panel}>

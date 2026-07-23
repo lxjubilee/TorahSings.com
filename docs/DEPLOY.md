@@ -107,5 +107,41 @@ The `J:\music\angels` tree (~3.3 GB) lives in Cloudflare R2 bucket
 domain `cdn.jubileeverse.com` — not a separate bucket.
 
 ```bash
-rclone copy "J:/music/angels" r2:jubileeverse-cdn/torahsings
+rclone copy "J:/music/angels" jubilee-r2:jubileeverse-cdn/torahsings
 ```
+
+The remote is named `jubilee-r2` in the studio machine's rclone config (`rclone
+listremotes` to confirm — earlier revisions of this file said `r2:`).
+
+**Sync before you build.** The scan catalogues whatever is on `J:` at that moment,
+so an album that has landed on the drive but not in R2 renders a play button that
+404s — and only in production, since dev streams from `J:` and looks fine.
+
+```bash
+# what the catalog expects vs what R2 actually holds
+rclone check "J:/music/angels" jubilee-r2:jubileeverse-cdn/torahsings --size-only
+```
+
+## Cover art
+
+Covers are ordinary files inside the album folder, so they need no separate
+pipeline: the rclone sync above already carries `artwork/` to R2, and `artUrl()`
+(src/lib/angels.ts) resolves them exactly like the audio — CDN in production,
+the `/media` route off `J:` in dev.
+
+The scan prefers each album's **webp** over its png. Both are on the drive and
+both are on the CDN, but the webp is ~0.5 MB against ~3 MB for the same picture.
+
+Only 14 of 285 albums have artwork at all. The other 271 carry `art: null` and
+render `<CelestialArt>` — the generated placeholder — so an album never shows a
+broken image while waiting for a cover.
+
+There is no thumbnailing step and no `sharp` dependency (it was never in
+package.json, so `npm run catalog` used to need an ambient install; it no longer
+does). If the ~470 KB average per cover becomes a problem once more albums have
+artwork, the fix is a 500 px webp variant beside each original on `J:` and a
+one-line change to the scan's file preference — not a new upload path.
+
+Cache note: covers are keyed by filename with no `?v=`, so a *replaced* cover
+sits behind Cloudflare's TTL. Purge that one URL from the Cloudflare dashboard
+after re-syncing.

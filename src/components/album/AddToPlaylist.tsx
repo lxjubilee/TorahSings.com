@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { showAuthGate } from '@/lib/auth-gate';
 import { useJubileeAccount } from '@/lib/jubilee-account';
@@ -11,6 +11,13 @@ import {
   type UserPlaylist,
 } from '@/lib/playlists';
 import styles from './AddToPlaylist.module.css';
+
+/** Layout effect that stays quiet during Next's server render. */
+const useIsoLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
+
+/** Distance from the trigger, and the minimum breathing room at the window edge. */
+const GAP = 8;
+const EDGE = 12;
 
 /**
  * "Add album to playlist", ported from JubiLujah's AddToPlaylist.
@@ -41,27 +48,68 @@ export function AddToPlaylist({
   const [newName, setNewName] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  // Anchor coordinates for the portalled menu (see the portal note below).
-  const [anchor, setAnchor] = useState<{ left: number; top: number } | null>(null);
+  // Screen coordinates for the portalled menu (see the portal note below).
+  // Null until measured, which is what keeps the first paint from flashing.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   const setOpenState = (v: boolean) => {
     setOpen(v);
     onOpenChange?.(v);
-    if (v && ref.current) {
-      const r = ref.current.getBoundingClientRect();
-      // Clamp into the viewport: the menu is centred on the trigger, so a tile
-      // near either edge would otherwise push it off-screen. Flip above the
-      // trigger when there isn't room below.
-      const W = 340;
-      const H = 330; // approx; only used to decide above/below
-      const M = 12;
-      const half = W / 2;
-      const left = Math.min(Math.max(r.left + r.width / 2, half + M), window.innerWidth - half - M);
-      const below = r.bottom + 10;
-      const top = below + H > window.innerHeight ? Math.max(M, r.top - H - 10) : below;
-      setAnchor({ left, top });
-    }
+    // Drop the old coordinates so the next open re-measures instead of flashing
+    // the menu at wherever the trigger used to be.
+    if (!v) setPos(null);
   };
+
+  /**
+   * Pin the menu directly under the trigger.
+   *
+   * The height is MEASURED, never assumed. This used to guess 330px to decide
+   * above-or-below, which was wrong in the common case — an empty or one-line
+   * menu is ~160px — so on a short viewport it flipped ABOVE the button and then
+   * clamped to the top of the window, leaving the menu stranded next to the nav
+   * while the button it belongs to sat halfway down the page.
+   */
+  const place = useCallback(() => {
+    const t = ref.current?.getBoundingClientRect();
+    const m = menuRef.current?.getBoundingClientRect();
+    if (!t || !m) return;
+
+    // Left-aligned to the trigger, then clamped so neither edge leaves the
+    // window — a tile near the right edge would otherwise overhang.
+    const left = Math.min(
+      Math.max(t.left, EDGE),
+      Math.max(EDGE, window.innerWidth - m.width - EDGE),
+    );
+
+    // Below by default. Flip above only when the real height genuinely does not
+    // fit below AND there is more room up there.
+    const below = t.bottom + GAP;
+    const roomBelow = window.innerHeight - below - EDGE;
+    const roomAbove = t.top - GAP - EDGE;
+    const top =
+      m.height <= roomBelow || roomBelow >= roomAbove
+        ? below
+        : Math.max(EDGE, t.top - GAP - m.height);
+
+    setPos({ left, top });
+  }, []);
+
+  // Measure once the menu is in the DOM, then keep it pinned: it grows when the
+  // playlists land and when a message appears, and the trigger moves when any
+  // ancestor scrolls (this page has its own scrolling columns, hence capture).
+  useIsoLayoutEffect(() => {
+    if (!open || !session) return;
+    place();
+    const ro = new ResizeObserver(place);
+    if (menuRef.current) ro.observe(menuRef.current);
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open, session, place]);
 
   // Close on an outside click.
   useEffect(() => {
@@ -149,12 +197,13 @@ export function AddToPlaylist({
 
       {/* Portalled to <body>: the hover-preview card is `overflow: hidden`, so a
           menu rendered inside it gets clipped (it extends past the card). Fixed
-          coordinates come from the trigger's rect, captured when it opens. */}
-      {open && session && anchor && createPortal(
+          coordinates come from the trigger's rect — see place(). It renders
+          hidden for the one layout pass it takes to measure itself. */}
+      {open && session && createPortal(
         <div
           ref={menuRef}
           className={styles.menu}
-          style={{ left: anchor.left, top: anchor.top }}
+          style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: 'hidden' }}
           role="dialog"
           aria-label="Add album to playlist"
         >

@@ -262,30 +262,9 @@
   gap: 10px;
 }
 
-.stars {
-  display: inline-flex;
-  gap: 2px;
-}
-
-.star {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 18px;
-  line-height: 1;
-  letter-spacing: 1px;
-  color: var(--hairline-strong);
-  cursor: pointer;
-  transition: color 0.12s ease, transform 0.1s ease;
-}
-
-.star[data-on='yes'] {
-  color: var(--accent);
-}
-
-.star:hover {
-  transform: scale(1.12);
-}
+/* The album stars are the shared <StarRating size="md"> (18px, 2px gap, same
+   accent/hairline colours and 1.12 hover scale the local .star rules used to
+   hand-roll) — see components/system/StarRating.module.css. */
 
 /* rv-avg — 22px / 800, sans; muted when unrated. */
 .ratingNum {
@@ -725,7 +704,14 @@
   text-overflow: ellipsis;
 }
 
-/* Per-track add button — appears on row hover (jv-tadd). */
+/* Per-track add button (jv-tadd).
+
+   Shown on EVERY row, not revealed on hover: an affordance you cannot see is one
+   you do not know exists, and hovering each track in turn to discover it is not
+   a reasonable way to find out. Hover now emphasises rather than reveals —
+   quiet at rest, brighter on the row, full strength on the button itself. It
+   also fixes a keyboard trap: at `opacity: 0` the button still took focus, so
+   tabbing through a track list moved focus onto something invisible. */
 .tadd button {
   width: 28px;
   height: 28px;
@@ -736,7 +722,7 @@
   border-radius: 50%;
   background: transparent;
   color: var(--ink-body);
-  opacity: 0;
+  opacity: 0.5;
   cursor: pointer;
   transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
 }
@@ -747,7 +733,7 @@
 }
 
 .trackRow:hover .tadd button {
-  opacity: 0.6;
+  opacity: 0.8;
 }
 
 .tadd button:hover {
@@ -755,6 +741,12 @@
   color: var(--accent-soft);
   border-color: var(--accent-soft);
   transform: scale(1.08);
+}
+
+/* Opacity dims the global focus ring along with the button, so a keyboard user
+   would otherwise get a half-strength outline. */
+.tadd button:focus-visible {
+  opacity: 1;
 }
 
 .tadd button.tAddOn {

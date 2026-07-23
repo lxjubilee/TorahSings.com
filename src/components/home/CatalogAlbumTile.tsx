@@ -3,7 +3,7 @@
 import { memo } from 'react';
 import Link from 'next/link';
 import { CelestialArt } from '@/components/system/CelestialArt';
-import { hasAudio, type CatalogAlbum } from '@/lib/angels';
+import { artUrl, hasAudio, type CatalogAlbum } from '@/lib/angels';
 import { useHoverPreview } from './HoverPreview';
 import styles from './CatalogAlbumTile.module.css';
 
@@ -36,7 +36,7 @@ function CatalogAlbumTileBase({ album }: { album: CatalogAlbum }) {
       {/* Cover only — the title/book now lives on the hover preview card. */}
       {album.art ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img className={styles.cover} src={album.art} alt="" loading="lazy" decoding="async" />
+        <img className={styles.cover} src={artUrl(album.art)} alt="" loading="lazy" decoding="async" />
       ) : (
         <CelestialArt
           className={styles.art}

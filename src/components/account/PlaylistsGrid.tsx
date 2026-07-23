@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAudio, type PlayableTrack } from '@/components/audio/AudioProvider';
-import { mediaUrl, type CatalogAlbum } from '@/lib/angels';
+import { artUrl, mediaUrl, type CatalogAlbum } from '@/lib/angels';
 import { allCatalogAlbums } from '@/lib/catalog';
 import { songUuid } from '@/lib/ids';
+import { ConfirmDialog } from '@/components/system/ConfirmDialog';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import {
   createPlaylist,
@@ -38,6 +39,8 @@ export function PlaylistsGrid() {
   const [desc, setDesc] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The playlist the confirm popup is asking about (null = popup closed).
+  const [pendingDelete, setPendingDelete] = useState<UserPlaylist | null>(null);
 
   // song uuid -> catalog album/track, for covers and for building a play queue.
   const bySongId = useMemo(() => {
@@ -84,8 +87,9 @@ export function PlaylistsGrid() {
     }
   };
 
+  /** Confirmed in the popup: drop the card, then DELETE (restore on failure). */
   const onDelete = async (pl: UserPlaylist) => {
-    if (!window.confirm(`Delete "${pl.name}"? This cannot be undone.`)) return;
+    setPendingDelete(null);
     setLists((prev) => prev?.filter((p) => p.id !== pl.id) ?? prev);
     try {
       await deletePlaylist(pl.id);
@@ -177,8 +181,10 @@ export function PlaylistsGrid() {
         <div className={styles.grid}>
           {lists.map((p) => {
             // The API sends cover: null (it reads a manifest we don't have), so
-            // fall back to the album art of the playlist's first track.
-            const cover = p.cover ?? (p.first_song_id ? bySongId.get(p.first_song_id)?.album.art ?? null : null);
+            // fall back to the album art of the playlist's first track. Only the
+            // fallback goes through artUrl — p.cover already arrives absolute.
+            const art = p.first_song_id ? bySongId.get(p.first_song_id)?.album.art ?? null : null;
+            const cover = p.cover ?? (art ? artUrl(art) : null);
             return (
             <div key={p.id} className={styles.card}>
               <button
@@ -219,7 +225,7 @@ export function PlaylistsGrid() {
                 >
                   Open
                 </button>
-                <button type="button" className={styles.ghost} onClick={() => onDelete(p)}>
+                <button type="button" className={styles.ghost} onClick={() => setPendingDelete(p)}>
                   Delete
                 </button>
               </div>
@@ -228,6 +234,17 @@ export function PlaylistsGrid() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete Playlist"
+        confirmLabel="Delete"
+        onConfirm={() => pendingDelete && onDelete(pendingDelete)}
+        onCancel={() => setPendingDelete(null)}
+      >
+        Delete &ldquo;<strong>{pendingDelete?.name}</strong>&rdquo;? This permanently removes the Playlist and
+        can&rsquo;t be undone.
+      </ConfirmDialog>
     </>
   );
 }

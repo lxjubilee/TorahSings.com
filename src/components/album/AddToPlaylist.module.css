@@ -8,10 +8,13 @@
 }
 
 /* Portalled to <body> and positioned from the trigger's rect, so the
-   hover-preview card's `overflow: hidden` cannot clip it. */
+   hover-preview card's `overflow: hidden` cannot clip it.
+
+   `left`/`top` are the menu's own top-left corner — AddToPlaylist aligns it to
+   the trigger's left edge and clamps it into the window, so there is no
+   transform to undo here. */
 .menu {
   position: fixed;
-  transform: translateX(-50%);
   /* Above the hover-preview card (z-index 1500), which it can overlap when the
      card sits low enough that the menu has to flip upwards. */
   z-index: 1600;

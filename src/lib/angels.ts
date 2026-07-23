@@ -15,6 +15,9 @@ export interface CatalogTrack {
   title: string;
   /** Path relative to the angels music root, forward-slashed. */
   rel: string;
+  /** Length in whole seconds, read from the mp3 at scan time. Absent when the
+   *  file's header could not be parsed — the tracklist then shows "--:--". */
+  secs?: number;
 }
 
 export interface CatalogAlbum {
@@ -29,8 +32,10 @@ export interface CatalogAlbum {
   hue: number;
   /** A Hebrew watermark letter for the art. */
   glyph?: string;
-  /** Cover-art URL (a build-time thumbnail of the album's /artwork image),
-   *  or null when the album has no artwork — the tile falls back to celestial art. */
+  /** Path to the album's cover under `artwork/`, relative to the angels music
+   *  root — same shape as a track's `rel`. Null when the album has no artwork,
+   *  which is most of them; the tile falls back to celestial art. Resolve with
+   *  `artUrl()`, never render it raw: the base differs by environment. */
   art?: string | null;
   /** Rendered songs, in order. Empty when no audio has landed yet. */
   tracks: CatalogTrack[];
@@ -52,12 +57,25 @@ export interface CatalogCategory {
  */
 const MEDIA_BASE = (process.env.NEXT_PUBLIC_MEDIA_BASE || '').replace(/\/+$/, '');
 
+const encodePath = (rel: string) => rel.split('/').map(encodeURIComponent).join('/');
+
 /** Turn a drive-relative path into a media URL: the R2 CDN in production, the
  *  local `/media` route handler in dev. */
 export function mediaUrl(rel: string): string {
-  const encoded = rel.split('/').map(encodeURIComponent).join('/');
+  const encoded = encodePath(rel);
   return MEDIA_BASE ? `${MEDIA_BASE}/${encoded}` : `/media/${encoded}`;
 }
+
+/**
+ * Cover art is just another file in the album folder, so it resolves exactly
+ * like the audio: the R2 CDN in production, the `/media` route off the drive in
+ * dev. Nothing extra to upload — the covers ride the same rclone sync as the
+ * mp3s, and the scan picks each album's webp over its png (~6× lighter).
+ *
+ * Only albums that actually have artwork carry a value; the rest are null and
+ * render <CelestialArt> instead.
+ */
+export const artUrl = mediaUrl;
 
 /** Every rendered song of an album, as a queue the audio engine can play. */
 export function albumPlayables(album: CatalogAlbum): PlayableTrack[] {

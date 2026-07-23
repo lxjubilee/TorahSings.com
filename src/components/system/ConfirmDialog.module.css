@@ -1,0 +1,139 @@
+/* The site's own confirm popup, replacing window.confirm() — a dark panel card
+   in the JubiLujah language (navy panel, gold hairline, pill actions) so a
+   destructive prompt looks like the site instead of like Chrome. */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  /* Above the sign-in gate (2000) and the transport bar (60): a confirm is the
+     most modal thing on screen while it is open. */
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(6, 9, 16, 0.72);
+  backdrop-filter: blur(3px);
+  animation: fade 0.14s var(--ease);
+}
+
+.card {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  padding: 26px 28px 22px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 16px;
+  background: var(--bg-panel);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.62);
+  animation: rise 0.18s var(--ease);
+}
+
+.close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-muted);
+  font-size: 21px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.close:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink);
+}
+
+.close:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.title {
+  margin: 0 34px 12px 0;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.body {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--ink-body);
+}
+
+.body strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.btn {
+  padding: 9px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: transparent;
+  color: var(--ink-body);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.danger {
+  border-color: var(--accent-rose);
+  color: var(--accent-rose);
+}
+
+.danger:hover:not(:disabled) {
+  border-color: var(--accent-rose);
+  background: rgba(233, 69, 96, 0.14);
+  color: var(--accent-rose);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .card {
+    animation: none;
+  }
+}

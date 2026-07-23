@@ -148,8 +148,8 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
   const [cooldown, setCooldown] = useState(0);
   const [locked, setLocked] = useState(false);
 
-  const returnTo = '/account';
-  /** Where a freshly created account lands (sign-in still goes to /account). */
+  const returnTo = '/';
+  /** Where a freshly created account lands (sign-in now also lands on Home). */
   const AFTER_SIGNUP = '/';
 
   // Resend cooldown ticker.
@@ -158,6 +158,19 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
     const t = setInterval(() => setCooldown((c) => (c <= 1 ? 0 : c - 1)), 1000);
     return () => clearInterval(t);
   }, [cooldown]);
+
+  // One-time banner after a password reset (/reset-password redirects here with
+  // ?reset=1). Read from window.location rather than useSearchParams so this
+  // component needs no Suspense boundary; the param is then stripped so a reload
+  // doesn't re-show it.
+  useEffect(() => {
+    if (isSignup) return;
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('reset') === '1') {
+      setInfo('Your password was updated. Please sign in.');
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, [isSignup]);
 
   // ---- Cloudflare Turnstile ------------------------------------------------
   // The widget's smallest size is a fixed 300x65 box. To keep it exactly as wide
@@ -696,7 +709,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
               ) : (
                 <>
                   <div className={styles.forgot}>
-                    <Link href="/account">Forgot password?</Link>
+                    <Link href="/forgot-password">Forgot password?</Link>
                   </div>
                   {/* Sent as `rememberMe` — it maps to the extended refresh-token
                       lifetime (1 year vs 30 days). See docs/API.md §3. */}
