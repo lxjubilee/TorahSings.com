@@ -7,13 +7,14 @@ import { HttpError, requireAuth } from '../middleware/rbac.js';
 import { validate } from '../middleware/validate.js';
 import { query, withTransaction } from '../db.js';
 import {
-  upsertUserFromJI, issueAccessToken, purgeUserAccount,
+  upsertUserFromJI, upsertUserFromSSO, issueAccessToken, purgeUserAccount,
   createRefreshToken, redeemRefreshToken, revokeRefreshToken, revokeAllRefreshTokens,
 } from '../auth/session.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
 import { sendPasswordResetEmail, sendLoginVerificationEmail, sendSignupVerificationEmail } from '../services/email.js';
 import { syncPasswordToJI } from '../services/jiSync.js';
 import { jiLogin, jiCheckEmail } from '../services/jiLogin.js';
+import { ssoLogin, ssoLookup, ssoProvisionHash, ssoSetPassword } from '../services/ssoClient.js';
 import { logger } from '../logger.js';
 
 // Default role for self-service sign-ups (configurable). content_editor lets a
@@ -158,6 +159,17 @@ async function establishSessionFromJI(req, res, jiUser) {
   return { user, tokens };
 }
 
+// ---- SSO delegation (config.loginMode === 'sso') ---------------------------
+// The Jubilee Identity Authority verified the password; upsert the returned user
+// locally (SSO is credential authority only) and mint OUR OWN session. No 2FA/OTP
+// or Turnstile here — the SSO is trusted, exactly like the JI delegation above.
+async function establishSessionFromSSO(req, ssoUser) {
+  const { user } = await upsertUserFromSSO(ssoUser);
+  const tokens = await issueTokens({ userId: user.id, extended: !!req.body?.rememberMe });
+  await writeAudit(null, user.id, 'login_success', { via: 'sso' });
+  return { user, tokens };
+}
+
 // Local fallback for a TorahSings-only account.
 //
 // Someone who signed up here exists in our identity tables but not in JI, so JI
@@ -268,6 +280,24 @@ router.post('/refresh', validate(refreshSchema), ah(async (req, res) => {
   res.json({ tokens: tokenPayload(access.token, req.body.refreshToken, access.expiresAt) });
 }));
 
+// ---- Email existence check (drives the email-first signup) -----------------
+// GET so it's CSRF-exempt and cacheable-free. In SSO mode it asks the shared
+// authority; otherwise it checks our own users table. Fails OPEN (exists:false)
+// when the authority is unreachable, so the user can still reach the signup form
+// (a genuine collision is caught later at register/provision).
+router.get('/lookup', ah(async (req, res) => {
+  const email = String(req.query.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    throw new HttpError(400, 'A valid email is required.');
+  }
+  if (config.loginMode === 'sso') {
+    const found = await ssoLookup(email);
+    return res.json({ exists: found.ok ? found.exists : false, available: found.ok });
+  }
+  const r = await query('SELECT 1 FROM identity.users WHERE email = $1 AND is_active = TRUE', [email]);
+  res.json({ exists: r.rowCount > 0, available: true });
+}));
+
 // ---- Sign up — phase 1: collect details, email a verification code ---------
 // The account is NOT created here. We stash the details + scrypt hash + a 6-digit
 // code in identity.signup_verifications and email the code. Phase 2 (/verify-signup)
@@ -291,7 +321,17 @@ router.post('/signup', validate(signupSchema), ah(async (req, res) => {
   // generic 409 as the local hit (no new enumeration surface — signup already
   // reveals existence). Best-effort: a JI outage returns `unknown` and we fall
   // through, exactly as before this guard existed.
-  if (config.loginMode === 'ji') {
+  // SSO mode: ask the shared authority (fail open on an outage). Otherwise (ji
+  // mode) ask JubileeInspire. Same generic 409 as the local hit — signup already
+  // reveals existence, so no new enumeration surface.
+  if (config.loginMode === 'sso') {
+    const found = await ssoLookup(emailNorm);
+    if (found.ok && found.exists) {
+      logger.info({ email: emailNorm }, 'Signup blocked: email exists on SSO');
+      throw new HttpError(409, 'An account with this email already exists. Please sign in.');
+    }
+    if (!found.ok) logger.warn({ email: emailNorm, found }, 'SSO lookup unavailable; allowing signup');
+  } else if (config.loginMode === 'ji') {
     const ji = await jiCheckEmail(emailNorm);
     if (ji.exists) throw new HttpError(409, 'An account with this email already exists. Please sign in.');
   }
@@ -350,15 +390,31 @@ router.post('/verify-signup', validate(verifySignupSchema), ah(async (req, res) 
       [sub, row.email, row.display_name]
     );
     const newUser = u.rows[0];
-    await client.query('INSERT INTO identity.credentials (user_id, password_hash) VALUES ($1, $2)', [newUser.id, row.password_hash]);
+    // In SSO mode the credential lives ONLY in the Identity Authority (provisioned
+    // after this tx by ssoProvisionHash). Do NOT store a local copy — the SSO is the
+    // single credential store; sign-in never checks a local credential here.
+    if (config.loginMode !== 'sso') {
+      await client.query('INSERT INTO identity.credentials (user_id, password_hash) VALUES ($1, $2)', [newUser.id, row.password_hash]);
+    }
     await client.query(
       `INSERT INTO identity.user_roles (user_id, role, granted_by) VALUES ($1, $2, $1) ON CONFLICT DO NOTHING`,
       [newUser.id, DEFAULT_SIGNUP_ROLE]
     );
     await client.query('UPDATE identity.signup_verifications SET verified_at = NOW(), used_at = NOW() WHERE id = $1', [row.id]);
     await writeAudit(client, newUser.id, 'account.created', { via: 'signup_otp' });
-    return newUser;
+    return { ...newUser, _hash: row.password_hash };
   });
+
+  // SSO mode: provision the identity in the shared authority from the scrypt hash we
+  // just stored (same KDF -> verifies on the first SSO sign-in). Best-effort — a 409
+  // means it is already in the SSO; any other failure is logged for reconciliation.
+  if (config.loginMode === 'sso') {
+    const parts = (user.display_name || '').trim().split(/\s+/).filter(Boolean);
+    const firstName = parts.shift() || user.email.split('@')[0];
+    const prov = await ssoProvisionHash({ email: user.email, firstName, lastName: parts.join(' '), passwordHash: user._hash });
+    if (!prov.ok && !prov.conflict) logger.error({ email: user.email, prov }, 'SSO provision on signup failed');
+  }
+
   const t = await issueTokens({ userId: user.id, extended: !!req.body.rememberMe });
   logger.info({ userId: user.id }, 'New account registered (email-verified signup)');
   res.status(201).json({ user: { id: user.id, email: user.email, displayName: user.display_name }, tokens: tokenPayload(t.accessToken, t.refreshToken, t.expiresAt) });
@@ -405,8 +461,43 @@ const signinSchema = z.object({
   verificationGuid: z.string().uuid().optional(),
   verificationCode: z.string().regex(/^\d{6}$/).optional(),
   rememberMe: z.boolean().optional(),
+  // SSO mode only: set by the sign-up flow (existing Jubilee ID) to allow creating
+  // the local account. Plain sign-in omits it, so deleted accounts aren't resurrected.
+  provision: z.boolean().optional(),
 });
 router.post('/signin', validate(signinSchema), ah(async (req, res) => {
+  // SSO mode: the Jubilee Identity Authority owns the credential. Verify the
+  // password there (no local 2FA/Turnstile — the SSO is trusted), then upsert the
+  // returned user and mint our own session.
+  if (config.loginMode === 'sso') {
+    const { email, password } = req.body;
+    // `provision:true` is sent ONLY by the sign-up flow (email-first, existing
+    // Jubilee ID). Plain sign-in never provisions, so a deleted Torah Sings account
+    // is NOT resurrected just because the SSO still holds the credential.
+    const allowProvision = req.body.provision === true;
+    const { status, body } = await ssoLogin({ email, password });
+    if (status !== 200 || !body?.user) {
+      if (status === 401) throw new HttpError(401, 'Invalid email or password');
+      throw new HttpError(status >= 400 && status < 600 ? status : 502, 'Sign in failed');
+    }
+    // SSO verified the credential. Only complete the sign-in if a LOCAL Torah Sings
+    // account exists — unless this is an explicit sign-up. This makes "delete
+    // account" stick: the SSO Jubilee ID survives, but the user must sign up again
+    // to rejoin Torah Sings.
+    const emailNorm = String(email).trim().toLowerCase();
+    const local = await query('SELECT 1 FROM identity.users WHERE email = $1 AND is_active = TRUE', [emailNorm]);
+    if (local.rowCount === 0 && !allowProvision) {
+      throw new HttpError(404, 'No Torah Sings account for this email. Please sign up.', { needsSignup: true });
+    }
+    const { user, tokens } = await establishSessionFromSSO(req, body.user);
+    return res.json({
+      success: true,
+      user: { id: user.id, email: user.email, displayName: user.display_name },
+      tokens: tokenPayload(tokens.accessToken, tokens.refreshToken, tokens.expiresAt),
+      trustToken: null,
+    });
+  }
+
   // Production delegates the credential check to JubileeInspire. Forward the raw
   // Turnstile token (JI verifies it — single-use, so we must NOT) and let JI own
   // the password check + 2FA issuance. The local flow below is the dev default.
@@ -576,14 +667,21 @@ router.post('/send-login-verification', validate(resendSchema), ah(async (req, r
 const forgotSchema = z.object({ email: z.string().trim().email().max(254) });
 router.post('/forgot-password', validate(forgotSchema), ah(async (req, res) => {
   const emailNorm = req.body.email.toLowerCase();
-  // Only password (credentialed), active users get a link — but the response is
-  // identical regardless, so this never reveals whether an account exists.
-  const r = await query(
-    `SELECT u.id, u.email FROM identity.users u
-       JOIN identity.credentials c ON c.user_id = u.id
-      WHERE u.email = $1 AND u.is_active = TRUE`,
-    [emailNorm]
-  );
+  // Active users get a link — the response is identical regardless, so this never
+  // reveals whether an account exists. In SSO mode the credential lives in the
+  // authority (there may be no local credentials row), so we don't require one;
+  // otherwise only locally-credentialed users are eligible.
+  const r = config.loginMode === 'sso'
+    ? await query(
+        'SELECT id, email FROM identity.users WHERE email = $1 AND is_active = TRUE',
+        [emailNorm]
+      )
+    : await query(
+        `SELECT u.id, u.email FROM identity.users u
+           JOIN identity.credentials c ON c.user_id = u.id
+          WHERE u.email = $1 AND u.is_active = TRUE`,
+        [emailNorm]
+      );
   if (r.rowCount) {
     const user = r.rows[0];
     const rawToken = crypto.randomBytes(32).toString('base64url');
@@ -620,12 +718,16 @@ router.post('/reset-password', validate(resetSchema), ah(async (req, res) => {
     );
     if (!pr.rowCount) throw new HttpError(400, 'This reset link is invalid or has expired.');
     const { id: resetId, user_id, email } = pr.rows[0];
-    // Upsert — SSO/JI users may not have a credentials row yet (sets a password).
-    await client.query(
-      `INSERT INTO identity.credentials (user_id, password_hash) VALUES ($1, $2)
-       ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
-      [user_id, hashPassword(password)]
-    );
+    // In SSO mode the new password is set at the Identity Authority (ssoSetPassword,
+    // after this tx) — the SINGLE credential store. Do NOT write a local copy. In
+    // local/ji mode, upsert the local credential (SSO/JI users may not have one yet).
+    if (config.loginMode !== 'sso') {
+      await client.query(
+        `INSERT INTO identity.credentials (user_id, password_hash) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
+        [user_id, hashPassword(password)]
+      );
+    }
     await client.query('UPDATE identity.password_resets SET used_at = NOW() WHERE id = $1', [resetId]);
     // Burn any other outstanding reset tokens; a successful reset proves email
     // control, so also clear any login lockout.
@@ -637,7 +739,13 @@ router.post('/reset-password', validate(resetSchema), ah(async (req, res) => {
   // Revoke every refresh token so no device can mint a new access JWT; existing
   // access JWTs lapse at their (short) TTL.
   await revokeAllRefreshTokens(userId);
-  // Mirror the new password to JubileeInspire (best-effort; never blocks reset).
+  // SSO mode: set the new password in the shared authority (the credential store).
+  if (config.loginMode === 'sso') {
+    const set = await ssoSetPassword(email, password);
+    if (!set.ok) logger.error({ email, set }, 'SSO reset-password set failed');
+    return res.json({ ok: true, ssoSync: set });
+  }
+  // Legacy: mirror the new password to JubileeInspire (best-effort; never blocks reset).
   const jiSync = await syncPasswordToJI(email, password);
   res.json({ ok: true, jiSync });
 }));
@@ -653,6 +761,19 @@ const changeSchema = z.object({
 router.post('/change-password', requireAuth, validate(changeSchema), ah(async (req, res) => {
   const userId = req.auth.user.id;
   const email = req.auth.user.email;
+
+  // SSO mode: the credential lives in the shared authority. Verify the current
+  // password there (a login attempt), then overwrite it via the service endpoint.
+  if (config.loginMode === 'sso') {
+    const { status } = await ssoLogin({ email, password: req.body.current_password });
+    if (status !== 200) throw new HttpError(401, 'Current password is incorrect.');
+    const set = await ssoSetPassword(email, req.body.new_password);
+    if (!set.ok) throw new HttpError(502, 'Could not change your password. Please try again.');
+    await writeAudit(null, userId, 'password.changed', { via: 'sso', ip: req.ip });
+    await revokeAllRefreshTokens(userId, { exceptToken: req.body?.refreshToken });
+    return res.json({ ok: true });
+  }
+
   const cr = await query('SELECT password_hash FROM identity.credentials WHERE user_id = $1', [userId]);
   if (!cr.rowCount) throw new HttpError(409, 'No password is set for this account. Use “forgot password” to create one.');
   // The ONLY local step: verify the current password as an auth gate. It is never

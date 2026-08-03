@@ -143,6 +143,10 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
 
   // Step 2 (2FA) state.
   const [step, setStep] = useState<'password' | 'code'>('password');
+  // Sign-up email-first phase: 'email' asks only for the address, then splits to
+  // 'existing' (already has a Jubilee Account -> password to sign in + join Torah
+  // Sings) or 'new' (the full sign-up form). Only meaningful when isSignup.
+  const [signupPhase, setSignupPhase] = useState<'email' | 'existing' | 'new'>('email');
   const [guid, setGuid] = useState('');
   const [code, setCode] = useState('');
   const [cooldown, setCooldown] = useState(0);
@@ -380,6 +384,67 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
   }
 
   /**
+   * Sign-up phase 0 — email-first. Look the address up at the Jubilee Account
+   * authority (GET /api/auth/lookup). If it already has an account, switch to a
+   * password prompt to sign in and join Torah Sings; otherwise open the full
+   * sign-up form. Fails OPEN to the full form if the lookup is unavailable — a
+   * genuine collision is then caught when the account is created.
+   */
+  async function submitSignupEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setInfo(null);
+    const addr = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
+      setErr('Please enter a valid email address.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await api.get<{ exists?: boolean; available?: boolean }>(
+        `/api/auth/lookup?email=${encodeURIComponent(addr)}`,
+      );
+      if (res?.exists) {
+        setSignupPhase('existing');
+        setInfo('You already have a Jubilee Account. Enter your password to sign in and join Torah Sings.');
+      } else {
+        setSignupPhase('new');
+      }
+      setBusy(false);
+    } catch {
+      // Lookup unavailable — fail open to the full form.
+      setSignupPhase('new');
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Sign-up "existing Jubilee Account" — the email already has a family account,
+   * so this is really a sign-in that ALSO provisions the local Torah Sings row
+   * (provision:true). Plain /signin never provisions, so a deleted account is not
+   * resurrected; this explicit sign-up path is the only one that recreates it.
+   */
+  async function submitExistingSignin(e: React.FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    setInfo(null);
+    setBusy(true);
+    try {
+      const res = await api.post<SignInResponse>('/api/auth/signin', {
+        email,
+        password,
+        rememberMe,
+        provision: true,
+      });
+      setTokens(res?.tokens);
+      window.location.assign(AFTER_SIGNUP);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Could not sign in. Please try again.');
+      setBusy(false);
+    }
+  }
+
+  /**
    * Sign-up step 2 — POST /api/auth/verify-signup (docs/AUTH_API.md §1.2).
    * On 201 the account exists and the response carries the token pair, so the
    * visitor is signed in immediately — no second trip through /signin.
@@ -552,6 +617,81 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                     }}
                   >
                     {isSignup ? 'Start over' : 'Use a different account'}
+                  </button>
+                </div>
+              </form>
+            ) : isSignup && signupPhase === 'email' ? (
+              <form onSubmit={submitSignupEmail}>
+                <div className={styles.field}>
+                  <label htmlFor="email">Email</label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+                <button type="submit" className={styles.submit} disabled={busy}>
+                  {busy ? 'Checking…' : 'Continue'}
+                </button>
+              </form>
+            ) : isSignup && signupPhase === 'existing' ? (
+              <form onSubmit={submitExistingSignin}>
+                <div className={styles.field}>
+                  <label htmlFor="email">Email</label>
+                  <input id="email" name="email" type="email" readOnly value={email} />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="password">Password</label>
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPw ? 'text' : 'password'}
+                    required
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={styles.eye}
+                    onClick={() => setShowPw((v) => !v)}
+                    aria-label={showPw ? 'Hide password' : 'Show password'}
+                  >
+                    <Eye open={showPw} />
+                  </button>
+                </div>
+                <div className={styles.forgot}>
+                  <Link href="/forgot-password">Forgot password?</Link>
+                </div>
+                <label className={styles.check}>
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                  />
+                  <span>Keep me signed in on this device</span>
+                </label>
+                <button type="submit" className={styles.submit} disabled={busy}>
+                  {busy ? 'Signing in…' : 'Sign In'}
+                </button>
+                <div className={styles.codeActions}>
+                  <button
+                    type="button"
+                    className={styles.linkBtn}
+                    onClick={() => {
+                      setSignupPhase('email');
+                      setPassword('');
+                      setErr(null);
+                      setInfo(null);
+                    }}
+                  >
+                    Use a different email
                   </button>
                 </div>
               </form>
