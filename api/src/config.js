@@ -81,12 +81,23 @@ export const config = {
     secret: process.env.TURNSTILE_SECRET_KEY || '',
   },
 
-  // Outbound email (password reset + login OTP). When `sendgridApiKey` is empty
-  // the email service falls back to a dev/log transport that just logs the
+  // Outbound email (password reset + login OTP). Transport is auto-selected:
+  // Mailgun when MAILGUN_API_KEY + MAILGUN_DOMAIN are set, else SendGrid when
+  // SENDGRID_API_KEY is set, else a dev/log transport that just logs the
   // link/code instead of sending — so the flows are testable with no provider.
+  // EMAIL_PROVIDER ('mailgun' | 'sendgrid' | 'log') forces one explicitly.
+  // NOTE: `from` must be on the Mailgun sending domain (torahsings.com) or Mailgun
+  // rejects the message / it fails SPF+DKIM alignment.
   email: {
+    provider: (process.env.EMAIL_PROVIDER || '').trim().toLowerCase(),
     sendgridApiKey: process.env.SENDGRID_API_KEY || '',
-    from: process.env.EMAIL_FROM || 'Jubilujah <no-reply@jubilujah.com>',
+    mailgun: {
+      apiKey: process.env.MAILGUN_API_KEY || '',
+      domain: process.env.MAILGUN_DOMAIN || '',
+      // US region = https://api.mailgun.net (default); EU = https://api.eu.mailgun.net
+      apiBase: (process.env.MAILGUN_API_BASE || 'https://api.mailgun.net').replace(/\/$/, ''),
+    },
+    from: process.env.EMAIL_FROM || 'TorahSings <noreply@torahsings.com>',
     resetTtlMinutes: Number(process.env.PASSWORD_RESET_TTL_MIN || 60),
   },
 
