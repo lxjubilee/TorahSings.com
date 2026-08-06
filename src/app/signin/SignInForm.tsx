@@ -271,7 +271,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
         setLastName(p.last_name || '');
         setDob(String(p.date_of_birth || '').slice(0, 10));
         setSignupPhase('confirm');
-        setInfo('You already have a Jubilee Account — confirm your details to join Torah Sings.');
+        setInfo('You already have a Jubilee ID — confirm your details to join Torah Sings.');
         setBusy(false);
         return;
       }
@@ -722,7 +722,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                   <input id="c-email" name="email" type="email" readOnly value={email} />
                 </div>
                 <div className={styles.field}>
-                  <label htmlFor="c-pw">Jubilee Account password</label>
+                  <label htmlFor="c-pw">Jubilee ID password</label>
                   <input
                     id="c-pw"
                     name="password"
