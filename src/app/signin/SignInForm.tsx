@@ -146,7 +146,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
   // Sign-up email-first phase: 'email' asks only for the address, then splits to
   // 'existing' (already has a Jubilee Account -> password to sign in + join Torah
   // Sings) or 'new' (the full sign-up form). Only meaningful when isSignup.
-  const [signupPhase, setSignupPhase] = useState<'email' | 'existing' | 'new'>('email');
+  const [signupPhase, setSignupPhase] = useState<'email' | 'confirm' | 'new'>('email');
   const [guid, setGuid] = useState('');
   const [code, setCode] = useState('');
   const [cooldown, setCooldown] = useState(0);
@@ -259,6 +259,19 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
         setStep('code');
         setCooldown(60);
         setInfo('We emailed you a 6-digit code. Enter it below to finish signing in.');
+        setBusy(false);
+        return;
+      }
+
+      // Valid Jubilee Account but no local Torah Sings account → route to the
+      // PRE-FILLED create form (a deliberate re-join) instead of a dead-end error.
+      if ((res as any)?.needsProfile) {
+        const p = (res as any).profile || {};
+        setFirstName(p.first_name || '');
+        setLastName(p.last_name || '');
+        setDob(String(p.date_of_birth || '').slice(0, 10));
+        setSignupPhase('confirm');
+        setInfo('You already have a Jubilee Account — confirm your details to join Torah Sings.');
         setBusy(false);
         return;
       }
@@ -390,7 +403,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
    * sign-up form. Fails OPEN to the full form if the lookup is unavailable — a
    * genuine collision is then caught when the account is created.
    */
-  async function submitSignupEmail(e: React.FormEvent) {
+  async function submitEntry(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setInfo(null);
@@ -399,21 +412,40 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
       setErr('Please enter a valid email address.');
       return;
     }
+    if (!password) {
+      setErr('Please enter your password.');
+      return;
+    }
     setBusy(true);
     try {
-      const res = await api.get<{ exists?: boolean; available?: boolean }>(
-        `/api/auth/lookup?email=${encodeURIComponent(addr)}`,
-      );
-      if (res?.exists) {
-        setSignupPhase('existing');
-        setInfo('You already have a Jubilee Account. Enter your password to sign in and join Torah Sings.');
-      } else {
-        setSignupPhase('new');
+      const res: any = await api.post<SignInResponse>('/api/auth/signin', {
+        email: addr,
+        password,
+        rememberMe,
+        preview: true,
+      });
+      if (res?.success && res?.tokens) {
+        // Already a Torah Sings member → signed in.
+        setTokens(res.tokens);
+        window.location.assign(AFTER_SIGNUP);
+        return;
       }
-      setBusy(false);
-    } catch {
-      // Lookup unavailable — fail open to the full form.
+      if (res?.needsProfile) {
+        // Existing Jubilee Account, new here → pre-filled create form.
+        const p = res.profile || {};
+        setFirstName(p.first_name || '');
+        setLastName(p.last_name || '');
+        setDob(String(p.date_of_birth || '').slice(0, 10));
+        setSignupPhase('confirm');
+        setBusy(false);
+        return;
+      }
+      // No Jubilee Account → full registration (email + password carry over).
+      setConfirm(password);
       setSignupPhase('new');
+      setBusy(false);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "That password doesn't match. Try again.");
       setBusy(false);
     }
   }
@@ -424,22 +456,31 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
    * (provision:true). Plain /signin never provisions, so a deleted account is not
    * resurrected; this explicit sign-up path is the only one that recreates it.
    */
-  async function submitExistingSignin(e: React.FormEvent) {
+  async function submitConfirm(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     setInfo(null);
+    if (!firstName.trim() || !lastName.trim()) {
+      setErr('Please enter your first and last name.');
+      return;
+    }
     setBusy(true);
     try {
+      // provision:true creates the local Torah Sings account; the edited First/Last/DOB
+      // sync to the shared Jubilee Account server-side.
       const res = await api.post<SignInResponse>('/api/auth/signin', {
         email,
         password,
         rememberMe,
         provision: true,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        date_of_birth: dob || undefined,
       });
       setTokens(res?.tokens);
       window.location.assign(AFTER_SIGNUP);
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : 'Could not sign in. Please try again.');
+      setErr(e instanceof ApiError ? e.message : "That password doesn't match. Try again.");
       setBusy(false);
     }
   }
@@ -621,7 +662,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                 </div>
               </form>
             ) : isSignup && signupPhase === 'email' ? (
-              <form onSubmit={submitSignupEmail}>
+              <form onSubmit={submitEntry}>
                 <div className={styles.field}>
                   <label htmlFor="email">Email</label>
                   <input
@@ -635,20 +676,10 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                     onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
-                <button type="submit" className={styles.submit} disabled={busy}>
-                  {busy ? 'Checking…' : 'Continue'}
-                </button>
-              </form>
-            ) : isSignup && signupPhase === 'existing' ? (
-              <form onSubmit={submitExistingSignin}>
                 <div className={styles.field}>
-                  <label htmlFor="email">Email</label>
-                  <input id="email" name="email" type="email" readOnly value={email} />
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="password">Password</label>
+                  <label htmlFor="entry-pw">Password</label>
                   <input
-                    id="password"
+                    id="entry-pw"
                     name="password"
                     type={showPw ? 'text' : 'password'}
                     required
@@ -666,8 +697,49 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                     <Eye open={showPw} />
                   </button>
                 </div>
-                <div className={styles.forgot}>
-                  <Link href="/forgot-password">Forgot password?</Link>
+                <button type="submit" className={styles.submit} disabled={busy}>
+                  {busy ? 'Checking…' : 'Continue'}
+                </button>
+              </form>
+            ) : signupPhase === 'confirm' ? (
+              <form onSubmit={submitConfirm}>
+                <div className={styles.nameRow}>
+                  <div className={styles.field}>
+                    <label htmlFor="c-first">First Name</label>
+                    <input id="c-first" name="firstName" type="text" required autoComplete="given-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                  </div>
+                  <div className={styles.field}>
+                    <label htmlFor="c-last">Last Name</label>
+                    <input id="c-last" name="lastName" type="text" required autoComplete="family-name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                  </div>
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="c-dob">Date of Birth</label>
+                  <input id="c-dob" name="dob" type="date" value={dob} onChange={(e) => setDob(e.target.value)} />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="c-email">Email</label>
+                  <input id="c-email" name="email" type="email" readOnly value={email} />
+                </div>
+                <div className={styles.field}>
+                  <label htmlFor="c-pw">Jubilee Account password</label>
+                  <input
+                    id="c-pw"
+                    name="password"
+                    type={showPw ? 'text' : 'password'}
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className={styles.eye}
+                    onClick={() => setShowPw((v) => !v)}
+                    aria-label={showPw ? 'Hide password' : 'Show password'}
+                  >
+                    <Eye open={showPw} />
+                  </button>
                 </div>
                 <label className={styles.check}>
                   <input
@@ -678,7 +750,7 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                   <span>Keep me signed in on this device</span>
                 </label>
                 <button type="submit" className={styles.submit} disabled={busy}>
-                  {busy ? 'Signing in…' : 'Sign In'}
+                  {busy ? 'Creating…' : 'Create account'}
                 </button>
                 <div className={styles.codeActions}>
                   <button
@@ -686,7 +758,6 @@ export function SignInForm({ initialMode = 'signin' }: { initialMode?: 'signin' 
                     className={styles.linkBtn}
                     onClick={() => {
                       setSignupPhase('email');
-                      setPassword('');
                       setErr(null);
                       setInfo(null);
                     }}
