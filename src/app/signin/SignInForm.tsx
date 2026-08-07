@@ -155,14 +155,15 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
   // the widget can't render (e.g. domain not allow-listed) it never blocks.
   const [tnToken, setTnToken] = useState('');
   const [tnFailed, setTnFailed] = useState(false);
-  const tnRef = useRef<HTMLDivElement>(null);
+  const tnRef = useRef<HTMLDivElement>(null);       // inner 300px render target (scaled)
+  const tnBoxRef = useRef<HTMLDivElement>(null);    // outer full-width wrapper (measured)
   const widgetId = useRef<string | null>(null);
   const renderTurnstile = useCallback(() => {
     if (!TURNSTILE_SITE_KEY || !tnRef.current || !window.turnstile || widgetId.current) return;
     widgetId.current = window.turnstile.render(tnRef.current, {
       sitekey: TURNSTILE_SITE_KEY,
       theme: 'dark',
-      size: 'flexible',
+      size: 'normal',
       callback: (t: string) => { setTnToken(t); setTnFailed(false); },
       'error-callback': () => { setTnToken(''); setTnFailed(true); },
       'expired-callback': () => setTnToken(''),
@@ -180,6 +181,24 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     widgetId.current = null;
     setTnToken(''); setTnFailed(false);
   }, [phase, renderTurnstile]);
+
+  // The 'normal' widget is a fixed 300px; CSS-scale it to the measured container
+  // width so the captcha is exactly as wide as the email textbox at any viewport.
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY || phase !== 'email') return;
+    const box = tnBoxRef.current, inner = tnRef.current;
+    if (!box || !inner) return;
+    const TN_W = 300, TN_H = 65;
+    const apply = () => {
+      const s = box.clientWidth / TN_W;
+      inner.style.transform = `scale(${s})`;
+      box.style.height = `${TN_H * s}px`;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [phase]);
 
   // Lock body scroll so only the left panel scrolls.
   useEffect(() => {
@@ -386,7 +405,11 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
                   <label htmlFor="email">Email</label>
                   <input id="email" name="email" type="email" required autoFocus placeholder="you@example.com" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
                 </div>
-                {TURNSTILE_SITE_KEY && <div className={styles.turnstile} ref={tnRef} />}
+                {TURNSTILE_SITE_KEY && (
+                  <div className={styles.turnstile} ref={tnBoxRef}>
+                    <div className={styles.turnstileInner} ref={tnRef} />
+                  </div>
+                )}
                 <button type="submit" className={styles.submit} disabled={busy}>{busy ? 'Checking…' : 'Continue'}</button>
                 <p style={{ ...subStyle, margin: '16px 0 0', fontSize: 12.5 }}>No account yet? We&rsquo;ll set one up for you.</p>
               </form>
