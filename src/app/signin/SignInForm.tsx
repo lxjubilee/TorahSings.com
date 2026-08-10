@@ -98,11 +98,11 @@ const acctStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', 
 /**
  * The "one door" (Jubilee ID Sign-in guidelines): /signin and /signup render the
  * same email-first flow. Screen 1 asks for the EMAIL only, looks it up at the
- * Jubilee Account authority, then routes —
+ * Jubilee ID authority, then routes —
  *   welcome     : returning Torah Sings member → password → sign in
- *   confirm     : has a Jubilee Account, new here → confirm password …
+ *   confirm     : has a Jubilee ID, new here → confirm password …
  *   createlinked: … then Create-account (First/Last/DOB, no password)
- *   new         : no Jubilee Account → create one → 6-digit email verification
+ *   new         : no Jubilee ID → create one → 6-digit email verification
  */
 type Phase = 'email' | 'welcome' | 'confirm' | 'createlinked' | 'new' | 'code';
 
@@ -151,7 +151,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
 
   // ---- Cloudflare Turnstile (Screen 1 only, human verification) ------------
   // Client-side gate: in SSO mode the credential is verified at the trusted
-  // Jubilee Account authority, which does not require this token. Fail-safe — if
+  // Jubilee ID authority, which does not require this token. Fail-safe — if
   // the widget can't render (e.g. domain not allow-listed) it never blocks.
   const [tnToken, setTnToken] = useState('');
   const [tnFailed, setTnFailed] = useState(false);
@@ -215,7 +215,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     setPassword(''); setConfirm(''); setFirstName(''); setLastName(''); setDob('');
   }
 
-  // ---- Screen 1: email → look up the Jubilee Account, then route ----
+  // ---- Screen 1: email → look up the Jubilee ID, then route ----
   async function submitEmail(e: React.FormEvent) {
     e.preventDefault();
     setErr(null); setInfo(null);
@@ -226,7 +226,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     try {
       const look = await api.get<LookupResponse>(`/api/auth/lookup?email=${encodeURIComponent(addr)}`);
       if (look?.existsLocally) setPhase('welcome');        // Outcome A — returning member
-      else if (look?.existsInSso) setPhase('confirm');     // Outcome B — has a Jubilee Account, new here
+      else if (look?.existsInSso) setPhase('confirm');     // Outcome B — has a Jubilee ID, new here
       else setPhase('new');                                // Outcome C — brand new
     } catch {
       // Fail open to full sign-up; a genuine collision is caught at create time.
@@ -261,7 +261,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     }
   }
 
-  // ---- Screen 2B-1: existing Jubilee Account, new here → confirm password ----
+  // ---- Screen 2B-1: existing Jubilee ID, new here → confirm password ----
   async function submitConfirmPw(e: React.FormEvent) {
     e.preventDefault();
     setErr(null); setInfo(null);
@@ -276,7 +276,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
         setDob(String(p.date_of_birth || '').slice(0, 10));
         setPhase('createlinked'); setBusy(false); return;
       }
-      setPhase('new'); setBusy(false);   // no Jubilee Account after all
+      setPhase('new'); setBusy(false);   // no Jubilee ID after all
     } catch (e) {
       setErr(errMsg(e, 'That password does not match. Try again, or reset it below.'));
       setBusy(false);
@@ -301,7 +301,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     }
   }
 
-  // ---- Screen 2C: create a brand-new Jubilee Account → email a code ----
+  // ---- Screen 2C: create a brand-new Jubilee ID → email a code ----
   async function submitNew(e: React.FormEvent) {
     e.preventDefault();
     setErr(null); setInfo(null);
@@ -399,8 +399,8 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
             {/* ── Screen 1: the one door — email only ── */}
             {phase === 'email' && (
               <form onSubmit={submitEmail}>
-                <h1 style={hStyle}>Sign in with your Jubilee Account</h1>
-                <p style={subStyle}>One Jubilee Account works across all our sites.</p>
+                <h1 style={hStyle}>Sign in with your Jubilee ID</h1>
+                <p style={subStyle}>One Jubilee ID works across all our sites.</p>
                 <div className={styles.field}>
                   <label htmlFor="email">Email</label>
                   <input id="email" name="email" type="email" required autoFocus placeholder="you@example.com" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -438,10 +438,10 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
             {phase === 'confirm' && (
               <form onSubmit={submitConfirmPw}>
                 <h1 style={hStyle}>Confirm it&rsquo;s you</h1>
-                <p style={subStyle}>This email already has a Jubilee Account. Enter your password to continue and join {SITE_NAME}.</p>
+                <p style={subStyle}>This email already has a Jubilee ID. Enter your password to continue and create your account on {SITE_NAME}.</p>
                 {accountRow}
                 <div className={styles.field}>
-                  <label htmlFor="c-pw">Jubilee Account password</label>
+                  <label htmlFor="c-pw">Jubilee ID password</label>
                   <input id="c-pw" type={showPw ? 'text' : 'password'} required autoFocus autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
                   <button type="button" className={styles.eye} onClick={() => setShowPw((v) => !v)} aria-label={showPw ? 'Hide password' : 'Show password'}><Eye open={showPw} /></button>
                 </div>
@@ -454,7 +454,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
             {phase === 'createlinked' && (
               <form onSubmit={submitCreateLinked}>
                 <h1 style={hStyle}>Create your {SITE_NAME} account</h1>
-                <p style={subStyle}>Your Jubilee Account is confirmed. Add a few details to finish creating your account here.</p>
+                <p style={subStyle}>Your Jubilee ID is confirmed. Add a few details to finish creating your account here.</p>
                 <div className={styles.nameRow}>
                   <div className={styles.field}>
                     <label htmlFor="cl-first">First Name</label>
@@ -480,10 +480,10 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
               </form>
             )}
 
-            {/* ── Screen 2C: Create your Jubilee Account ── */}
+            {/* ── Screen 2C: Create your Jubilee ID ── */}
             {phase === 'new' && (
               <form onSubmit={submitNew}>
-                <h1 style={hStyle}>Let&rsquo;s create your Jubilee Account</h1>
+                <h1 style={hStyle}>Let&rsquo;s create your Jubilee ID</h1>
                 <p style={subStyle}>One account gives you access to {SITE_NAME} and everything else across Jubilee. It only takes a moment.</p>
                 <div className={styles.nameRow}>
                   <div className={styles.field}>
@@ -531,7 +531,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
                   <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
                   <span>I agree to the <Link href="/terms">Terms of Use</Link> and <Link href="/privacy">Privacy Policy</Link>.</span>
                 </label>
-                <button type="submit" className={styles.submit} disabled={busy}>{busy ? 'Creating account…' : 'Create my Jubilee Account'}</button>
+                <button type="submit" className={styles.submit} disabled={busy}>{busy ? 'Creating account…' : 'Create my Jubilee ID'}</button>
                 <div className={styles.codeActions}>
                   <button type="button" className={styles.linkBtn} onClick={useDifferentEmail}>Use a different email</button>
                 </div>

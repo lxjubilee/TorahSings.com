@@ -14,7 +14,7 @@ import { SignInForm } from '../signin/SignInForm';
 export const metadata: Metadata = {
   title: 'Sign up',
   description:
-    'Create your Jubilee Account — one sign-on across the Torah Sings ecosystem.',
+    'Create your Jubilee ID — one sign-on across the Torah Sings ecosystem.',
   robots: { index: false, follow: false },
 };
 
