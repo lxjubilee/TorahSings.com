@@ -116,6 +116,19 @@ body::before {
 }
 
 /* -------------------------------------------------------------------------
+   Backstage-style Hebraic Christianity reading room — a flat black canvas
+   that overrides the navy theme + star field for those pages only. Scoped by
+   the .bsHebraic marker the listing and reader roots carry.
+   ---------------------------------------------------------------------- */
+body:has(.bsHebraic) {
+  background: #000;
+}
+
+body:has(.bsHebraic)::before {
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
    Typography
    ---------------------------------------------------------------------- */
 

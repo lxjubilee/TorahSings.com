@@ -213,36 +213,25 @@ All bodies are JSON and validated with zod; a failure is a 400.
 
 #### `POST /api/auth/signup`
 
-Phase 1 of registration. Emails a 6-digit code; **creates no session**.
+Registration, in **one call**: creates the account, provisions the Jubilee ID at the
+shared authority and **signs the user in** (201). No code is emailed.
 
 | Field | Rules |
 | --- | --- |
 | `name` | required, 1–120, trimmed |
 | `email` | required, valid, ≤254, trimmed |
 | `password` | required, 8–200 |
-
-```json
-{ "success": true, "requiresVerification": true, "email": "…", "verificationGuid": "<uuid>" }
-```
-
-#### `POST /api/auth/verify-signup`
-
-Phase 2. Consumes the code and **signs the user in** (201).
-
-| Field | Rules |
-| --- | --- |
-| `verificationGuid` | required, uuid |
-| `verificationCode` | required, exactly 6 digits |
 | `rememberMe` | optional boolean → 1-year refresh |
 
 ```json
-{ "user": { "id": "…", "email": "…", "displayName": "…" }, "tokens": { … } }
+{ "success": true, "user": { "id": "…", "email": "…", "displayName": "…" }, "tokens": { … } }
 ```
 
-#### `POST /api/auth/send-signup-verification`
+`409` when the email already has an account here or at the authority.
 
-Resends the signup code. Body: `{ "verificationGuid": "<uuid>" }`.
-Returns `{ "success": true, … }` — may include `resendsRemaining` / `cooldownSeconds`.
+> **Removed:** `POST /api/auth/verify-signup` and `POST /api/auth/send-signup-verification`
+> — the sign-up OTP is gone. The **login** OTP (`/signin` step 2, `/verify-login`,
+> `/send-login-verification`) is unchanged.
 
 #### `POST /api/auth/signin`
 

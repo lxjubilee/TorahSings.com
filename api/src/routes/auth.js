@@ -11,7 +11,7 @@ import {
   createRefreshToken, redeemRefreshToken, revokeRefreshToken, revokeAllRefreshTokens,
 } from '../auth/session.js';
 import { hashPassword, verifyPassword } from '../auth/password.js';
-import { sendPasswordResetEmail, sendLoginVerificationEmail, sendSignupVerificationEmail } from '../services/email.js';
+import { sendPasswordResetEmail, sendLoginVerificationEmail } from '../services/email.js';
 import { syncPasswordToJI } from '../services/jiSync.js';
 import { jiLogin, jiCheckEmail } from '../services/jiLogin.js';
 import { ssoLogin, ssoLookup, ssoProvisionHash, ssoSetPassword, ssoUpdateProfile } from '../services/ssoClient.js';
@@ -49,7 +49,6 @@ const LOGIN_CODE_ATTEMPTS  = 5;               // wrong-code tries per code
 const RESEND_COOLDOWN_MS   = 60 * 1000;       // min gap between resends
 const MAX_LOGIN_RESENDS    = 2;               // 2 resends => 3 codes total, then lockout
 const LOGIN_LOCKOUT_MS     = 60 * 60 * 1000;  // lockout duration once the cap is hit
-const SIGNUP_CODE_EXPIRY_MS = 30 * 60 * 1000; // email-verification code lifetime (signup)
 
 const sha256hex = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 const genOtpCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
@@ -302,15 +301,28 @@ router.get('/lookup', ah(async (req, res) => {
   res.json({ exists: r.rowCount > 0, existsInSso: r.rowCount > 0, existsLocally: r.rowCount > 0, available: true });
 }));
 
-// ---- Sign up — phase 1: collect details, email a verification code ---------
-// The account is NOT created here. We stash the details + scrypt hash + a 6-digit
-// code in identity.signup_verifications and email the code. Phase 2 (/verify-signup)
-// creates the real account once the code checks out — so an unverified email
-// never yields an account.
+// ---- Sign up — ONE phase: create the account and sign in ------------------
+//
+// Signing up no longer proves the address. It used to email a 6-digit code and
+// park the details in identity.signup_verifications until the code came back;
+// JubileeInspire's Jubilee ID door dropped that step first and this follows it.
+// A new email now creates the account, provisions the Jubilee ID at the shared
+// authority and returns tokens in a single call — nothing is emailed, nothing
+// waits, and a deployment with no mail sender can still take sign-ups.
+// /verify-signup and /send-signup-verification are gone with it; the login OTP
+// (/verify-login, /send-login-verification) is untouched.
+//
+// first_signin_completed stays TRUE, exactly as it was when the code set it. In
+// THIS codebase that column gates the LOGIN OTP (see /signin: otpRequired =
+// !first_signin_completed || two_factor_enabled), so writing FALSE here would
+// not record "address unproven" — it would move the emailed code from sign-up
+// to the very next sign-in, which is the step being removed. (service.js also
+// reports that column as `emailVerified`; that reading is now optimistic.)
 const signupSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().email().max(254),
   password: z.string().min(8).max(200),
+  rememberMe: z.boolean().optional(),
 });
 router.post('/signup', validate(signupSchema), ah(async (req, res) => {
   const { name, email, password } = req.body;
@@ -319,15 +331,11 @@ router.post('/signup', validate(signupSchema), ah(async (req, res) => {
   const existing = await query('SELECT 1 FROM identity.users WHERE email = $1 AND is_active = TRUE', [emailNorm]);
   if (existing.rowCount) throw new HttpError(409, 'An account with this email already exists. Please sign in.');
 
-  // Prod (ji mode): JubileeInspire is the account directory, so an email can
-  // already exist on JI with no local row yet — the local check above would miss
-  // it and we'd create a divergent duplicate. Ask JI before issuing a code. Same
-  // generic 409 as the local hit (no new enumeration surface — signup already
-  // reveals existence). Best-effort: a JI outage returns `unknown` and we fall
-  // through, exactly as before this guard existed.
-  // SSO mode: ask the shared authority (fail open on an outage). Otherwise (ji
-  // mode) ask JubileeInspire. Same generic 409 as the local hit — signup already
-  // reveals existence, so no new enumeration surface.
+  // An email can already exist at the authority with no local row here, which the
+  // check above would miss — we would create a divergent duplicate. Ask before
+  // creating anything. Same generic 409 as the local hit (no new enumeration
+  // surface — signup already reveals existence). Best-effort: an outage falls
+  // through, and the SSO's own 409 at provision time is the real guard.
   if (config.loginMode === 'sso') {
     const found = await ssoLookup(emailNorm);
     if (found.ok && found.exists) {
@@ -340,121 +348,53 @@ router.post('/signup', validate(signupSchema), ah(async (req, res) => {
     if (ji.exists) throw new HttpError(409, 'An account with this email already exists. Please sign in.');
   }
 
-  const code = genOtpCode();
-  const guid = await withTransaction(async (client) => {
-    // Drop earlier unfinished signups for this email so only the newest code works.
-    await client.query('DELETE FROM identity.signup_verifications WHERE email = $1 AND used_at IS NULL', [emailNorm]);
-    const ins = await client.query(
-      `INSERT INTO identity.signup_verifications
-          (email, display_name, password_hash, code, expires_at, max_attempts)
-       VALUES ($1, $2, $3, $4, NOW() + ($5::int || ' milliseconds')::interval, $6)
-       RETURNING verification_guid`,
-      [emailNorm, name, hashPassword(password), code, SIGNUP_CODE_EXPIRY_MS, LOGIN_CODE_ATTEMPTS]
-    );
-    return ins.rows[0].verification_guid;
-  });
-  await sendSignupVerificationEmail({ to: emailNorm, code });
-  logger.info({ email: emailNorm }, 'Signup verification code issued');
-  res.json({ success: true, requiresVerification: true, email: emailNorm, verificationGuid: guid });
-}));
+  // Hashed with the family scrypt KDF here so the SSO is provisioned from the
+  // HASH, never the plaintext — the same contract the sealed ticket carried.
+  const passwordHash = hashPassword(password);
 
-// ---- Sign up — phase 2: verify the code, then create the account -----------
-const verifySignupSchema = z.object({
-  verificationGuid: z.string().uuid(),
-  verificationCode: z.string().regex(/^\d{6}$/),
-  rememberMe: z.boolean().optional(),
-});
-router.post('/verify-signup', validate(verifySignupSchema), ah(async (req, res) => {
-  const { verificationGuid, verificationCode } = req.body;
   const user = await withTransaction(async (client) => {
-    const sv = await client.query(
-      'SELECT * FROM identity.signup_verifications WHERE verification_guid = $1 FOR UPDATE',
-      [verificationGuid]
-    );
-    if (!sv.rowCount) throw new HttpError(400, 'Invalid or expired verification.');
-    const row = sv.rows[0];
-    if (row.used_at) throw new HttpError(400, 'This sign-up was already completed. Please sign in.');
-    if (new Date(row.expires_at) <= new Date()) throw new HttpError(400, 'Verification code expired. Please sign up again.');
-    if (row.attempts >= row.max_attempts) throw new HttpError(429, 'Too many attempts. Please sign up again.');
-    if (!codeMatches(verificationCode, row.code)) {
-      await client.query('UPDATE identity.signup_verifications SET attempts = attempts + 1 WHERE id = $1', [row.id]);
-      const left = Math.max(0, row.max_attempts - row.attempts - 1);
-      throw new HttpError(400, `Incorrect code. ${left} attempt(s) left.`, { attemptsRemaining: left });
-    }
-    // Code OK — create the account now. Email is proven, so first_signin_completed=TRUE.
-    const taken = await client.query('SELECT id FROM identity.users WHERE email = $1', [row.email]);
-    if (taken.rowCount) {
-      await client.query('UPDATE identity.signup_verifications SET verified_at = NOW(), used_at = NOW() WHERE id = $1', [row.id]);
-      throw new HttpError(409, 'An account with this email already exists. Please sign in.');
-    }
-    const sub = `jubilujah|${row.email}`;
+    // Re-checked inside the transaction: the guards above are advisory, and two
+    // browsers posting the same address at once must not both get an account.
+    const taken = await client.query('SELECT id FROM identity.users WHERE email = $1', [emailNorm]);
+    if (taken.rowCount) throw new HttpError(409, 'An account with this email already exists. Please sign in.');
+    const sub = `jubilujah|${emailNorm}`;
     const u = await client.query(
       `INSERT INTO identity.users (external_subject, email, display_name, last_login_at, first_signin_completed)
          VALUES ($1, $2, $3, NOW(), TRUE) RETURNING id, email, display_name`,
-      [sub, row.email, row.display_name]
+      [sub, emailNorm, name]
     );
     const newUser = u.rows[0];
     // In SSO mode the credential lives ONLY in the Identity Authority (provisioned
     // after this tx by ssoProvisionHash). Do NOT store a local copy — the SSO is the
     // single credential store; sign-in never checks a local credential here.
     if (config.loginMode !== 'sso') {
-      await client.query('INSERT INTO identity.credentials (user_id, password_hash) VALUES ($1, $2)', [newUser.id, row.password_hash]);
+      await client.query('INSERT INTO identity.credentials (user_id, password_hash) VALUES ($1, $2)', [newUser.id, passwordHash]);
     }
     await client.query(
       `INSERT INTO identity.user_roles (user_id, role, granted_by) VALUES ($1, $2, $1) ON CONFLICT DO NOTHING`,
       [newUser.id, DEFAULT_SIGNUP_ROLE]
     );
-    await client.query('UPDATE identity.signup_verifications SET verified_at = NOW(), used_at = NOW() WHERE id = $1', [row.id]);
-    await writeAudit(client, newUser.id, 'account.created', { via: 'signup_otp' });
-    return { ...newUser, _hash: row.password_hash };
+    await writeAudit(client, newUser.id, 'account.created', { via: 'signup_direct' });
+    return newUser;
   });
 
   // SSO mode: provision the identity in the shared authority from the scrypt hash we
-  // just stored (same KDF -> verifies on the first SSO sign-in). Best-effort — a 409
+  // just computed (same KDF -> verifies on the first SSO sign-in). Best-effort — a 409
   // means it is already in the SSO; any other failure is logged for reconciliation.
   if (config.loginMode === 'sso') {
     const parts = (user.display_name || '').trim().split(/\s+/).filter(Boolean);
     const firstName = parts.shift() || user.email.split('@')[0];
-    const prov = await ssoProvisionHash({ email: user.email, firstName, lastName: parts.join(' '), passwordHash: user._hash });
+    const prov = await ssoProvisionHash({ email: user.email, firstName, lastName: parts.join(' '), passwordHash });
     if (!prov.ok && !prov.conflict) logger.error({ email: user.email, prov }, 'SSO provision on signup failed');
   }
 
   const t = await issueTokens({ userId: user.id, extended: !!req.body.rememberMe });
-  logger.info({ userId: user.id }, 'New account registered (email-verified signup)');
-  res.status(201).json({ user: { id: user.id, email: user.email, displayName: user.display_name }, tokens: tokenPayload(t.accessToken, t.refreshToken, t.expiresAt) });
-}));
-
-// ---- Resend the signup verification code (60s cooldown; capped) ------------
-const resendSignupSchema = z.object({ verificationGuid: z.string().uuid() });
-router.post('/send-signup-verification', validate(resendSignupSchema), ah(async (req, res) => {
-  const out = await withTransaction(async (client) => {
-    const sv = await client.query(
-      'SELECT id, email, resend_count, last_resend_at, used_at FROM identity.signup_verifications WHERE verification_guid = $1 FOR UPDATE',
-      [req.body.verificationGuid]
-    );
-    if (!sv.rowCount) throw new HttpError(400, 'Invalid or expired verification.');
-    const row = sv.rows[0];
-    if (row.used_at) throw new HttpError(400, 'This sign-up was already completed. Please sign in.');
-    if (row.last_resend_at && Date.now() - new Date(row.last_resend_at).getTime() < RESEND_COOLDOWN_MS) {
-      const wait = Math.ceil((RESEND_COOLDOWN_MS - (Date.now() - new Date(row.last_resend_at).getTime())) / 1000);
-      throw new HttpError(429, `Please wait ${wait}s before requesting another code.`, { cooldownSeconds: wait });
-    }
-    if (row.resend_count >= MAX_LOGIN_RESENDS) {
-      throw new HttpError(429, 'Too many code requests. Please start sign-up again.', { exhausted: true });
-    }
-    const code = genOtpCode();
-    await client.query(
-      `UPDATE identity.signup_verifications
-          SET code = $2, attempts = 0,
-              expires_at = NOW() + ($3::int || ' milliseconds')::interval,
-              resend_count = resend_count + 1, last_resend_at = NOW()
-        WHERE id = $1`,
-      [row.id, code, SIGNUP_CODE_EXPIRY_MS]
-    );
-    await sendSignupVerificationEmail({ to: row.email, code });
-    return { verificationGuid: req.body.verificationGuid, resendsRemaining: MAX_LOGIN_RESENDS - (row.resend_count + 1) };
+  logger.info({ userId: user.id }, 'New account registered (direct signup)');
+  res.status(201).json({
+    success: true,
+    user: { id: user.id, email: user.email, displayName: user.display_name },
+    tokens: tokenPayload(t.accessToken, t.refreshToken, t.expiresAt),
   });
-  res.json({ success: true, ...out });
 }));
 
 // Normalize the SSO's date_of_birth (a Postgres DATE serialized to ISO shifts by the

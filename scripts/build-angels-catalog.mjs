@@ -1,7 +1,7 @@
 /**
  * Scan the angels music tree and emit src/content/angels-catalog.ts.
  *
- *   J:\music\angels\{NN}_{Book}\{CODE} {Album Title}\tracks\{NN Song}.mp3
+ *   J:\torahsings.com\music\{NN}_{Book}\{CODE} {Album Title}\tracks\{NN Song}.mp3
  *
  * Books are bucketed into the six home-page divisions. Every album folder is
  * catalogued (title from the folder name); mp3s found under an album's tracks/
@@ -18,7 +18,7 @@
 import { closeSync, openSync, readSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ROOT = process.env.ANGELS_ROOT || 'J:/music/angels';
+const ROOT = process.env.ANGELS_ROOT || 'J:/torahsings.com/music';
 const OUT = new URL('../src/content/angels-catalog.ts', import.meta.url);
 const ART_RE = /\.(png|jpe?g|webp)$/i;
 

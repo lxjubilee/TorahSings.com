@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- Targets net10.0-windows: this machine has the .NET 10 SDK + Windows
+         Desktop runtime only, and a net8 app will not roll forward across a
+         major version by default. WebView2 (1.0.*) and ImageSharp (2.1.*) are
+         both netstandard2.0-based and run fine on .NET 10. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ImageStudio</AssemblyName>
+    <RootNamespace>ArticleImageStudio</RootNamespace>
+    <ApplicationIcon />
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.*" />
+    <!--
+      WebP encoding for downloaded images. Windows Imaging Component ships a
+      WebP *decoder* but no encoder, so this cannot be done with the built-in
+      WPF imaging types.
+
+      Pinned to 2.1.x deliberately: ImageSharp 3.0 moved to the Six Labors Split
+      License, which requires a paid licence above a revenue threshold. The 2.x
+      line is Apache-2.0 and has the WebP encoder we need.
+    -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.*" />
+  </ItemGroup>
+
+</Project>

@@ -1,20 +1,20 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { ArticleReader } from '@/components/articles/ArticleReader';
-import { allArticleSlugs, getArticle } from '@/lib/content';
+import { BackstageReader } from '@/components/backstage/BackstageReader';
+import { allHebraicSlugs, getHebraicArticle, relatedHebraic } from '@/lib/hebraic';
 
 export const revalidate = 3600;
 
 type Params = Promise<{ slug: string }>;
 
 export function generateStaticParams() {
-  return allArticleSlugs().map((slug) => ({ slug }));
+  return allHebraicSlugs().map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
-  const article = getArticle(slug);
+  const article = getHebraicArticle(slug);
   if (!article) return { title: 'Article not found' };
 
   return {
@@ -26,8 +26,8 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 export default async function ArticlePage({ params }: { params: Params }) {
   const { slug } = await params;
-  const article = getArticle(slug);
+  const article = getHebraicArticle(slug);
   if (!article) notFound();
 
-  return <ArticleReader article={article} />;
+  return <BackstageReader article={article} related={relatedHebraic(slug)} />;
 }

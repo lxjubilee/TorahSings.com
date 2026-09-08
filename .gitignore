@@ -53,3 +53,14 @@ yarn-error.log*
 
 # Personal Claude Code overrides — grants SSH/deploy access; never commit.
 .claude/settings.local.json
+
+# ArticleImageStudio (.NET/WPF tool under tools/) — build output, VS files, and
+# its local runtime state. (tools/ArticleImageStudio/.gitignore also covers
+# bin/obj/.webview2; these belt-and-suspenders entries catch the rest.)
+tools/**/bin/
+tools/**/obj/
+tools/**/.vs/
+tools/**/.webview2/
+tools/**/*.user
+tools/**/studio.config.json
+tools/**/cookies.json

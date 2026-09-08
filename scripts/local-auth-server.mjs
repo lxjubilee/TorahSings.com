@@ -156,10 +156,6 @@ const PORT = Number(process.env.PORT || 4031);
 const DB_PATH = process.env.LOCAL_AUTH_DB || path.join(ROOT, '.local-auth.db');
 
 // Mirrors api/src/routes/auth.js
-const SIGNUP_CODE_EXPIRY_MS = 30 * 60 * 1000; // 30 min
-const CODE_ATTEMPTS = 5;
-const RESEND_COOLDOWN_MS = 60 * 1000; // 60 s
-const MAX_RESENDS = 2; // 2 resends => 3 codes total
 const DEFAULT_SIGNUP_ROLE = process.env.DEFAULT_SIGNUP_ROLE || 'content_editor';
 // Password reset — mirrors api/src/config.js (PASSWORD_RESET_TTL_MIN=60,
 // WEB_BASE_URL). The link is printed to this console instead of emailed.
@@ -1032,15 +1028,6 @@ class HttpError extends Error {
   }
 }
 
-const genOtpCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-
-/** Constant-time 6-digit compare. */
-function codeMatches(given, stored) {
-  const a = Buffer.from(String(given));
-  const b = Buffer.from(String(stored));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
 /** Minimal stand-in for the api's zod schemas — same rules, same `issues[]`. */
 function validate(body, rules) {
   const issues = [];
@@ -1091,16 +1078,9 @@ function issueTokens(userId, { extended = false } = {}) {
 
 const publicUser = (u) => ({ id: u.id, email: u.email, displayName: u.display_name });
 
-/** The real API emails this; with no provider configured it logs it. Same here. */
-function deliverCode(email, code, kind) {
-  const line = `  ${kind} code for ${email}:  ${code}`;
-  console.log('\n' + '─'.repeat(60));
-  console.log('  📧  DEV EMAIL (not sent — no provider configured)');
-  console.log(line);
-  console.log('─'.repeat(60) + '\n');
-}
-
-/** Password-reset counterpart of deliverCode — prints the clickable reset link. */
+/** The real API emails this; with no provider configured it prints the reset
+    link. It is the only mail this dev server has left — signing up no longer
+    sends a code. */
 function deliverResetLink(email, url) {
   console.log('\n' + '─'.repeat(60));
   console.log('  📧  DEV EMAIL (not sent — no provider configured)');
@@ -1111,7 +1091,11 @@ function deliverResetLink(email, url) {
 
 // ------------------------------------------------------------------- routes ---
 const routes = {
-  /** Phase 1 — stash a pending sign-up + email a code. No account yet. */
+  /**
+   * Sign up — ONE phase, mirroring api/src/routes/auth.js: the account is
+   * created and signed in immediately. There is no emailed code and no pending
+   * row; /verify-signup and /send-signup-verification are gone from both.
+   */
   'POST /api/auth/signup': (body) => {
     validate(body, { name: isName, email: isEmail, password: isPassword });
     const email = body.email.trim().toLowerCase();
@@ -1121,92 +1105,20 @@ const routes = {
       throw new HttpError(409, 'An account with this email already exists. Please sign in.');
     }
 
-    // Drop earlier unfinished sign-ups so only the newest code works.
-    db.prepare('DELETE FROM signup_verifications WHERE email = ? AND used_at IS NULL').run(email);
-
-    const guid = crypto.randomUUID();
-    const code = genOtpCode();
-    db.prepare(
-      `INSERT INTO signup_verifications
-         (verification_guid, email, display_name, password_hash, code, expires_at, max_attempts, created_at)
-       VALUES (?,?,?,?,?,?,?,?)`
-    ).run(guid, email, body.name.trim(), hashPassword(body.password), code,
-          now() + SIGNUP_CODE_EXPIRY_MS, CODE_ATTEMPTS, now());
-
-    deliverCode(email, code, 'SIGN-UP');
-    return { status: 200, body: { success: true, requiresVerification: true, email, verificationGuid: guid } };
-  },
-
-  /** Phase 2 — check the code, create the account, sign them in. */
-  'POST /api/auth/verify-signup': (body) => {
-    validate(body, { verificationGuid: isUuid, verificationCode: isCode });
-    const row = db.prepare('SELECT * FROM signup_verifications WHERE verification_guid = ?')
-      .get(body.verificationGuid);
-    if (!row) throw new HttpError(400, 'Invalid or expired verification.');
-    if (row.used_at) throw new HttpError(400, 'This sign-up was already completed. Please sign in.');
-    if (row.expires_at <= now()) throw new HttpError(400, 'Verification code expired. Please sign up again.');
-    if (row.attempts >= row.max_attempts) throw new HttpError(429, 'Too many attempts. Please sign up again.');
-
-    if (!codeMatches(body.verificationCode, row.code)) {
-      db.prepare('UPDATE signup_verifications SET attempts = attempts + 1 WHERE verification_guid = ?')
-        .run(row.verification_guid);
-      const left = Math.max(0, row.max_attempts - row.attempts - 1);
-      throw new HttpError(400, `Incorrect code. ${left} attempt(s) left.`, { attemptsRemaining: left });
-    }
-
-    const taken = db.prepare('SELECT id FROM users WHERE email = ?').get(row.email);
-    if (taken) {
-      db.prepare('UPDATE signup_verifications SET verified_at = ?, used_at = ? WHERE verification_guid = ?')
-        .run(now(), now(), row.verification_guid);
-      throw new HttpError(409, 'An account with this email already exists. Please sign in.');
-    }
-
     const id = crypto.randomUUID();
     db.prepare(
       `INSERT INTO users (id, external_subject, email, display_name, last_login_at, first_signin_completed, created_at)
        VALUES (?,?,?,?,?,1,?)`
-    ).run(id, `jubilujah|${row.email}`, row.email, row.display_name, now(), now());
-    db.prepare('INSERT INTO credentials (user_id, password_hash) VALUES (?,?)').run(id, row.password_hash);
+    ).run(id, `jubilujah|${email}`, email, body.name.trim(), now(), now());
+    db.prepare('INSERT INTO credentials (user_id, password_hash) VALUES (?,?)').run(id, hashPassword(body.password));
     db.prepare('INSERT OR IGNORE INTO user_roles (user_id, role) VALUES (?,?)').run(id, DEFAULT_SIGNUP_ROLE);
-    db.prepare('UPDATE signup_verifications SET verified_at = ?, used_at = ? WHERE verification_guid = ?')
-      .run(now(), now(), row.verification_guid);
-    audit(id, 'account.created', { via: 'signup_otp' });
+    audit(id, 'account.created', { via: 'signup_direct' });
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     console.log(`  ✅  account created: ${user.email}  (${user.display_name})`);
     return {
       status: 201,
-      body: { user: publicUser(user), tokens: issueTokens(id, { extended: !!body.rememberMe }) },
-    };
-  },
-
-  /** Resend — 60 s cooldown, capped at MAX_RESENDS. */
-  'POST /api/auth/send-signup-verification': (body) => {
-    validate(body, { verificationGuid: isUuid });
-    const row = db.prepare('SELECT * FROM signup_verifications WHERE verification_guid = ?')
-      .get(body.verificationGuid);
-    if (!row) throw new HttpError(400, 'Invalid or expired verification.');
-    if (row.used_at) throw new HttpError(400, 'This sign-up was already completed. Please sign in.');
-
-    if (row.last_resend_at && now() - row.last_resend_at < RESEND_COOLDOWN_MS) {
-      const wait = Math.ceil((RESEND_COOLDOWN_MS - (now() - row.last_resend_at)) / 1000);
-      throw new HttpError(429, `Please wait ${wait}s before requesting another code.`, { cooldownSeconds: wait });
-    }
-    if (row.resend_count >= MAX_RESENDS) {
-      throw new HttpError(429, 'Too many codes requested. Please sign up again.', { exhausted: true });
-    }
-
-    const code = genOtpCode();
-    db.prepare(
-      `UPDATE signup_verifications
-          SET code = ?, expires_at = ?, attempts = 0, resend_count = resend_count + 1, last_resend_at = ?
-        WHERE verification_guid = ?`
-    ).run(code, now() + SIGNUP_CODE_EXPIRY_MS, now(), row.verification_guid);
-
-    deliverCode(row.email, code, 'SIGN-UP (resend)');
-    return {
-      status: 200,
-      body: { success: true, verificationGuid: row.verification_guid, resendsRemaining: MAX_RESENDS - (row.resend_count + 1) },
+      body: { success: true, user: publicUser(user), tokens: issueTokens(id, { extended: !!body.rememberMe }) },
     };
   },
 

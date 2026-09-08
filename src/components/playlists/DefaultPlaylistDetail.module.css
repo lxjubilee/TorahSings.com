@@ -1,0 +1,238 @@
+.panel {
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+/* ---- banner (16:9, article-page treatment) ------------------------------- */
+.banner {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 360px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-card);
+  display: flex;
+  align-items: flex-end;
+}
+
+.bannerEmpty {
+  background: linear-gradient(135deg, var(--bg-card), var(--bg-panel));
+  border: 1px solid var(--hairline);
+}
+
+.banner img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bannerShade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.15) 55%, transparent 100%);
+}
+
+.bannerText {
+  position: relative;
+  padding: 22px 26px;
+  color: #fff;
+}
+
+.eyebrow {
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.desc {
+  margin: 8px 0 0;
+  max-width: 60ch;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* ---- anchor verse -------------------------------------------------------- */
+.verse {
+  margin: 22px 0 0;
+  padding: 14px 20px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg-panel);
+  border-radius: 0 10px 10px 0;
+  color: var(--ink-body);
+  font-style: italic;
+}
+
+.verse cite {
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  font-style: normal;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* ---- actions ------------------------------------------------------------- */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 22px 0 10px;
+}
+
+.bigplay {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-rose);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bigplay:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.bigplay:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bigplay svg {
+  width: 16px;
+  height: 16px;
+}
+
+.editLink,
+.allLink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-body);
+  text-decoration: none;
+}
+
+.editLink:hover,
+.allLink:hover {
+  color: var(--accent);
+}
+
+.count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+/* ---- tracklist ----------------------------------------------------------- */
+.list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--bg-panel);
+}
+
+.playing {
+  background: var(--bg-panel);
+}
+
+.num {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.row:hover .numText {
+  opacity: 0;
+}
+
+.cue {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  color: var(--ink);
+}
+
+.cue svg {
+  width: 14px;
+  height: 14px;
+}
+
+.row:hover .cue,
+.playing .cue {
+  display: grid;
+}
+
+.playing .numText {
+  opacity: 0;
+}
+
+.name {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.songTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artist {
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.noAudio {
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-style: italic;
+}

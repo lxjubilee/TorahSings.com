@@ -1,0 +1,39 @@
+.section {
+  margin: 0 0 44px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 4px;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.count {
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  color: var(--ink-body);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.blurb {
+  margin: 0 0 16px;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

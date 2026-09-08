@@ -1,33 +1,33 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import { LessonDetail } from '@/components/lessons/LessonDetail';
-import { allLessonSlugs, getLessonAlbum } from '@/lib/content';
+import { LearnHebrewReader } from '@/components/backstage/LearnHebrewReader';
+import { allLearnHebrewSlugs, getLearnHebrewArticle, relatedLearnHebrew } from '@/lib/learn-hebrew';
 
 export const revalidate = 3600;
 
 type Params = Promise<{ slug: string }>;
 
 export function generateStaticParams() {
-  return allLessonSlugs().map((slug) => ({ slug }));
+  return allLearnHebrewSlugs().map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
-  const album = getLessonAlbum(slug);
-  if (!album) return { title: 'Lesson not found' };
+  const article = getLearnHebrewArticle(slug);
+  if (!article) return { title: 'Article not found' };
 
   return {
-    title: album.title,
-    description: album.intro,
-    openGraph: { title: `${album.title} · Torah Sings`, description: album.intro },
+    title: article.title,
+    description: article.dek,
+    openGraph: { title: `${article.title} · Torah Sings`, description: article.dek },
   };
 }
 
-export default async function LessonAlbumPage({ params }: { params: Params }) {
+export default async function LearnHebrewArticlePage({ params }: { params: Params }) {
   const { slug } = await params;
-  const album = getLessonAlbum(slug);
-  if (!album) notFound();
+  const article = getLearnHebrewArticle(slug);
+  if (!article) notFound();
 
-  return <LessonDetail album={album} />;
+  return <LearnHebrewReader article={article} related={relatedLearnHebrew(slug)} />;
 }

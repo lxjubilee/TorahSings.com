@@ -63,6 +63,7 @@
   max-width: 380px;
   margin: 0 auto;
   padding: 18px 0;
+  container-type: inline-size;
 }
 
 .brandLink {
@@ -72,8 +73,12 @@
 
 .avatar {
   display: block;
-  width: 100px;
-  height: 100px;
+  /* A quarter off the 100px this site opened with - Jubilee ID door standard
+     §4 (docs/JUBILEE-ID-DOOR-STANDARD.md on InspireManna). In CSS, not in the
+     img width/height attributes: those reserve the aspect ratio against layout
+     shift and should keep naming the intrinsic size. */
+  width: 69px;
+  height: 69px;
   margin: 0 auto 14px;
   border-radius: 50%;
   object-fit: cover;
@@ -84,7 +89,7 @@
   text-align: center;
   font-family: var(--font-cosmic), 'Segoe UI', sans-serif;
   font-weight: 700;
-  font-size: 26px;
+  font-size: min(32px, 11cqw);
   letter-spacing: 0.02em;
   line-height: 1;
 }
@@ -139,27 +144,37 @@
   margin-bottom: 18px;
 }
 
+/* The label sits INSIDE the well, parked in the raised position, replacing the
+   notch cut into the border — JubileeInspire's door does the same.
+
+   PARKED rather than floating, and that is deliberate: this site's inputs
+   carry REAL placeholders ("you@example.com"), where kJubilee's carry
+   placeholder=" ". A label that rested at the field's centre line would sit on
+   top of that hint text. Raised, the label and the placeholder stack instead
+   of colliding. */
 .field label {
   position: absolute;
-  top: -8px;
-  left: 12px;
-  padding: 0 6px;
+  top: 8px;
+  left: 16px;
   z-index: 1;
-  background: #292622;
-  font-size: 12px;
-  color: #cbc5b8;
+  font-size: 0.75rem;
+  color: #f0ad4e;
+  pointer-events: none;
 }
 
+/* A filled well with a transparent border until focus, as kJubilee's is. The
+   colours stay this site's — only the shape and the sizes are the family's. */
 .field input {
   width: 100%;
-  padding: 15px 44px 14px 14px;
-  border: 1.5px solid #b78d4d;
+  height: 58px;
+  padding: 22px 44px 8px 16px;
+  border: 2px solid transparent;
   border-radius: 8px;
-  background: transparent;
+  background: rgba(80, 80, 80, 0.7);
   color: #fff;
   font-family: inherit;
-  font-size: 14px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  font-size: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .field input::placeholder {
@@ -169,7 +184,7 @@
 .field input:focus {
   outline: none;
   border-color: #ffc56b;
-  box-shadow: 0 0 0 3px rgba(240, 173, 78, 0.16);
+  box-shadow: 0 0 0 3px rgba(240, 173, 78, 0.25);
 }
 
 .eye {
@@ -361,18 +376,23 @@
   transform-origin: top left;
 }
 
+/* Sized to JubileeBibleTalks' .auth-submit — same height, radius, size and
+   weight — so the two doors' buttons read as the same control. The gradient
+   and colours stay this site's. */
 .submit {
   width: 100%;
   margin-top: 6px;
-  padding: 15px;
+  height: 50px;
+  padding: 0 24px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: linear-gradient(180deg, #ffd27a, #efab44);
   box-shadow: 0 8px 20px rgba(239, 171, 68, 0.26);
   color: #2a1c00;
   font-family: inherit;
-  font-weight: 800;
-  font-size: 15px;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
   cursor: pointer;
   transition: filter 0.15s, transform 0.1s;
 }
@@ -394,7 +414,9 @@
 .foot {
   padding-top: 20px;
   text-align: center;
-  font-size: 12px;
+  /* Door standard §6: 8pt as a point size, not a conversion of it - the same
+     way the site header's strapline is written. Resolves to about 10.7px. */
+  font-size: 8pt;
   color: #8a857b;
 }
 
@@ -519,7 +541,7 @@
   background: linear-gradient(90deg, #ffd27a, #e8a23e);
 }
 
-@media (max-width: 820px) {
+@media (max-width: 1024px) {
   .split {
     grid-template-columns: 1fr;
   }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Orbitron, Spline_Sans_Mono } from 'next/font/google';
+import { Orbitron, Playfair_Display, Spline_Sans_Mono } from 'next/font/google';
 
 import { AudioProvider } from '@/components/audio/AudioProvider';
 import { NowPlayingBar } from '@/components/audio/NowPlayingBar';
@@ -30,6 +30,16 @@ const splineSansMono = Spline_Sans_Mono({
   variable: '--font-mono',
 });
 
+/* Serif accent for the backstage-style Hebraic Christianity reading room —
+   headlines, section heads, and the drop cap. */
+const playfair = Playfair_Display({
+  weight: ['500', '700'],
+  style: ['normal', 'italic'],
+  subsets: ['latin'],
+  display: 'swap',
+  variable: '--font-serif',
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL('https://torahsings.com'),
   title: {
@@ -53,7 +63,7 @@ export const viewport: Viewport = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const fontVars = [orbitron.variable, splineSansMono.variable].join(' ');
+  const fontVars = [orbitron.variable, splineSansMono.variable, playfair.variable].join(' ');
 
   return (
     <html lang="en" className={fontVars}>

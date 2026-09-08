@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { ALEPH_BET, MODES, degreeOf } from '@/lib/derivation';
 import { YEARLY_PRICE_LABEL } from '@/lib/format';
-import { ApiError } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { useJubileeAccount } from '@/lib/jubilee-account';
 import {
   getContributions,
@@ -118,6 +118,16 @@ export function AccountPanel() {
   const [pwNote, setPwNote] = useState<string | null>(null);
   const [pwBusy, setPwBusy] = useState(false);
 
+  // Address confirmation. `evVerified` is null until the first load answers,
+  // so the card shows nothing rather than flashing "Not confirmed" at somebody
+  // who is in fact confirmed.
+  const [evVerified, setEvVerified] = useState<boolean | null>(null);
+  const [evSent, setEvSent] = useState(false);
+  const [evCode, setEvCode] = useState('');
+  const [evBusy, setEvBusy] = useState(false);
+  const [evErr, setEvErr] = useState<string | null>(null);
+  const [evNote, setEvNote] = useState<string | null>(null);
+
   // Delete-account.
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [delBusy, setDelBusy] = useState(false);
@@ -204,6 +214,42 @@ export function AccountPanel() {
   }
 
   const isMember = entitlement === 'member';
+  useEffect(() => {
+    let alive = true;
+    api
+      .get<{ emailVerified?: boolean }>('/api/account/email-verification')
+      .then((r) => { if (alive) setEvVerified(r?.emailVerified === true); })
+      .catch(() => { /* an older API has no such route; the card stays silent */ });
+    return () => { alive = false; };
+  }, []);
+
+  async function sendVerifyCode() {
+    setEvErr(null); setEvNote(null); setEvBusy(true);
+    try {
+      const r = await api.post<{ alreadyVerified?: boolean; minutes?: number }>('/api/account/email-verification/send', {});
+      if (r?.alreadyVerified) { setEvVerified(true); return; }
+      setEvSent(true);
+      setEvCode('');
+      setEvNote(`We sent a code to ${session?.email ?? 'your address'}. It expires in ${r?.minutes ?? 10} minutes.`);
+    } catch (e) {
+      setEvErr(e instanceof ApiError ? e.message : 'We could not send your code.');
+    } finally { setEvBusy(false); }
+  }
+
+  async function confirmVerifyCode(e: React.FormEvent) {
+    e.preventDefault();
+    setEvErr(null); setEvNote(null); setEvBusy(true);
+    try {
+      await api.post('/api/account/email-verification/confirm', { code: evCode });
+      setEvSent(false);
+      setEvCode('');
+      setEvVerified(true);
+      setEvNote('Your address is confirmed.');
+    } catch (e) {
+      setEvErr(e instanceof ApiError ? e.message : 'That code did not work.');
+    } finally { setEvBusy(false); }
+  }
+
   const initial = (session.displayName || session.email || '?').trim().charAt(0).toUpperCase();
 
   const submitPassword = async (e: React.FormEvent) => {
@@ -260,6 +306,59 @@ export function AccountPanel() {
       </section>
 
       <div className={styles.shell}>
+        {/* ---- Email address ----
+            Three states, and the third is silence: null means the API has not
+            answered (or predates the route), and a prompt whose success cannot
+            be stored is worse than no prompt. Nothing on the site is gated on
+            this, so unconfirmed is an invitation and never a warning. */}
+        {evVerified !== null && (
+          <section className={styles.card}>
+            <div className={styles.cardHead}>
+              <h2 className={styles.cardTitle}>Email address</h2>
+              <p className={styles.cardNote}>
+                {evVerified
+                  ? 'This address is confirmed — we know we can reach you here.'
+                  : 'Confirming tells us we can actually reach you here. Nothing on your account depends on it, and everything keeps working either way.'}
+              </p>
+            </div>
+
+            {evNote && <p className={`${styles.msg} ${styles.msgOk}`}>{evNote}</p>}
+            {evErr && <p className={`${styles.msg} ${styles.msgErr}`}>{evErr}</p>}
+
+            {!evVerified && (evSent ? (
+              <form className={styles.form} onSubmit={confirmVerifyCode}>
+                <label className={styles.field}>
+                  <span>6-digit code</span>
+                  <div className={styles.input}>
+                    <input
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      required
+                      value={evCode}
+                      onChange={(e) => setEvCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    />
+                  </div>
+                </label>
+                <div className={styles.actions}>
+                  <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={evBusy || evCode.length !== 6}>
+                    {evBusy ? 'Checking…' : 'Confirm code'}
+                  </button>
+                  <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={sendVerifyCode} disabled={evBusy}>
+                    Send another code
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className={styles.actions}>
+                <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={sendVerifyCode} disabled={evBusy}>
+                  {evBusy ? 'Sending…' : 'Send me a code'}
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* ---- Change password ---- */}
         <section className={styles.card}>
           <div className={styles.cardHead}>

@@ -57,12 +57,6 @@ interface SignInResponse {
   profile?: { first_name?: string; last_name?: string; date_of_birth?: string | null };
   user?: { id: string; email: string; displayName?: string };
 }
-interface SignUpResponse {
-  success?: boolean;
-  requiresVerification?: boolean;
-  email?: string;
-  verificationGuid?: string;
-}
 interface ResendResponse { resendsRemaining?: number }
 interface LookupResponse { exists?: boolean; existsInSso?: boolean; existsLocally?: boolean; available?: boolean }
 
@@ -91,9 +85,45 @@ function Eye({ open }: { open: boolean }) {
 }
 
 // Inline heading styles (the module has no per-screen heading class).
-const hStyle: React.CSSProperties = { fontSize: 21, fontWeight: 800, textAlign: 'center', margin: '2px 0 8px', color: '#fff', lineHeight: 1.3 };
-const subStyle: React.CSSProperties = { fontSize: 13.5, textAlign: 'center', margin: '0 0 18px', lineHeight: 1.55, color: 'rgba(255,255,255,0.72)' };
-const acctStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '11px 13px', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 8, background: 'rgba(255,255,255,0.03)', margin: '0 0 18px', fontSize: 14 };
+//
+// THE LADDER BELOW THE WORDMARK IS THE JUBILEE ID DOOR STANDARD, not a choice
+// made for this site: the sizes and gaps are the ones kJubilee.com's door
+// settled on, so a reader crossing between the family's sites meets the same
+// door. See docs/JUBILEE-ID-DOOR-STANDARD.md (InspireManna). What is NOT shared
+// is anything that says which site this is — the wordmark, its font variable
+// and every colour stay exactly as this site had them.
+//
+// §1 heading: the WORDMARK'S OWN face (--font-cosmic, the same variable
+// .brand uses) so the two lines read as one lockup; capitals in CSS and never
+// typed into the string, so a screen reader is still handed an ordinary
+// sentence; tracking rises to 1px because capitals set at mixed-case tracking
+// read as one long word. The size chain keeps its steps legible rather than
+// collapsing to the answer — 21px, a quarter off, then a tenth, then a tenth
+// again, landing near 12.8px. §2 puts it 4px under the wordmark.
+const hStyle: React.CSSProperties = {
+  // kJubilee's OWN base (1.55rem), not this site's 21px. Owner decision
+  // 2026-09-08: every family door matches kJubilee, rather than each site
+  // deriving from its own originals. Lands on 15.07px, as kJubilee's does.
+  fontSize: 'calc(1.55rem * 0.75 * 0.9 * 0.9)',
+  fontFamily: "var(--font-cosmic), 'Orbitron', sans-serif",
+  textTransform: 'uppercase',
+  letterSpacing: '1px',
+  fontWeight: 800,
+  textAlign: 'center',
+  margin: '4px 0 0',
+  color: '#fff',
+  lineHeight: 1.3,
+};
+// §3: a quarter off, and up under the heading. The 18px below is the gap to
+// the form, which the standard does not speak to.
+// §3, off kJubilee's own 0.95rem rather than this site's 13.5px, so both land
+// on 11.4px.
+const subStyle: React.CSSProperties = { fontSize: 'calc(0.95rem * 0.75)', textAlign: 'center', margin: '2.4px 0 18px', lineHeight: 1.55, color: 'rgba(255,255,255,0.72)' };
+// THE ADDRESS BEING SIGNED IN belongs to the heading, not the form: two centred
+// lines under it, the address in the wordmark's face at the heading's size,
+// rather than a bordered box with the link pushed to its right edge.
+const acctStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', margin: '0 0 1.35rem', textAlign: 'center', color: '#fff' };
+const acctAddrStyle: React.CSSProperties = { maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "var(--font-cosmic), 'Orbitron', sans-serif", fontSize: 'calc(1.55rem * 0.75 * 0.9 * 0.9)', letterSpacing: '1px' };
 
 /**
  * The "one door" (Jubilee ID Sign-in guidelines): /signin and /signup render the
@@ -102,7 +132,12 @@ const acctStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', 
  *   welcome     : returning Torah Sings member → password → sign in
  *   confirm     : has a Jubilee ID, new here → confirm password …
  *   createlinked: … then Create-account (First/Last/DOB, no password)
- *   new         : no Jubilee ID → create one → 6-digit email verification
+ *   new         : no Jubilee ID → create one → signed in on the spot
+ *
+ * Signing up no longer emails a code — the account is created outright, the way
+ * JubileeInspire's Jubilee ID door does it. The `code` phase below is the LOGIN
+ * 2FA challenge alone (an account with two_factor_enabled, or one whose first
+ * sign-in has not completed).
  */
 type Phase = 'email' | 'welcome' | 'confirm' | 'createlinked' | 'new' | 'code';
 
@@ -120,8 +155,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
   const [rememberMe, setRememberMe] = useState(true);
   const [agree, setAgree] = useState(false);
 
-  // OTP — a new-account signup code OR a login 2FA code
-  const [codeMode, setCodeMode] = useState<'signup' | 'login'>('signup');
+  // Login 2FA — the emailed code that holds a sign-in part-way through
   const [guid, setGuid] = useState('');
   const [code, setCode] = useState('');
   const [cooldown, setCooldown] = useState(0);
@@ -243,7 +277,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     try {
       const res = await api.post<SignInResponse>('/api/auth/signin', { email: email.trim(), password, rememberMe });
       if (res?.requires2FA) {
-        setCodeMode('login'); setGuid(res.verificationGuid ?? ''); setCode('');
+        setGuid(res.verificationGuid ?? ''); setCode('');
         setPhase('code'); setCooldown(60);
         setInfo('We emailed you a 6-digit code. Enter it below to finish signing in.');
         setBusy(false); return;
@@ -301,7 +335,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     }
   }
 
-  // ---- Screen 2C: create a brand-new Jubilee ID → email a code ----
+  // ---- Screen 2C: create a brand-new Jubilee ID → straight in ----
   async function submitNew(e: React.FormEvent) {
     e.preventDefault();
     setErr(null); setInfo(null);
@@ -315,32 +349,26 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     const name = `${firstName.trim()} ${lastName.trim()}`.trim();
     setBusy(true);
     try {
-      const res = await api.post<SignUpResponse>('/api/auth/signup', { name, email: email.trim(), password });
-      setCodeMode('signup'); setGuid(res?.verificationGuid ?? ''); setCode('');
-      setPhase('code'); setCooldown(60);
-      setInfo('We emailed you a 6-digit code. Enter it below to finish creating your account.');
-      setBusy(false);
+      const res = await api.post<SignInResponse>('/api/auth/signup', { name, email: email.trim(), password, rememberMe });
+      // The account exists and the tokens are in hand: nothing is emailed and
+      // nothing waits on a code.
+      finish(res);
     } catch (e) {
-      setErr(errMsg(e, 'Could not reach the server. Please try again.'));
+      setErr(errMsg(e, 'Could not create your account. Please try again.'));
       setBusy(false);
     }
   }
 
-  // ---- OTP step: verify the code ----
+  // ---- Login 2FA: verify the emailed code ----
   async function submitCode(e: React.FormEvent) {
     e.preventDefault();
     setErr(null); setInfo(null);
     setBusy(true);
     try {
-      const res = codeMode === 'login'
-        ? await api.post<SignInResponse>('/api/auth/signin', { email: email.trim(), password, rememberMe, verificationGuid: guid, verificationCode: code })
-        : await api.post<SignInResponse>('/api/auth/verify-signup', { verificationGuid: guid, verificationCode: code, rememberMe });
+      const res = await api.post<SignInResponse>('/api/auth/signin', { email: email.trim(), password, rememberMe, verificationGuid: guid, verificationCode: code });
       finish(res);
     } catch (e) {
       if (e instanceof ApiError && (e.status === 423 || e.body?.locked)) setLocked(true);
-      if (e instanceof ApiError && (e.status === 429 || e.status === 409) && codeMode === 'signup') {
-        setPhase('new'); setGuid(''); setCode('');
-      }
       setErr(errMsg(e, 'Could not verify the code.'));
       setBusy(false);
     }
@@ -350,9 +378,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
     if (cooldown > 0 || locked) return;
     setErr(null); setInfo(null);
     try {
-      const res = codeMode === 'login'
-        ? await api.post<ResendResponse>('/api/auth/send-login-verification', { email: email.trim(), verificationGuid: guid })
-        : await api.post<ResendResponse>('/api/auth/send-signup-verification', { verificationGuid: guid });
+      const res = await api.post<ResendResponse>('/api/auth/send-login-verification', { email: email.trim(), verificationGuid: guid });
       setCooldown(60);
       const left = typeof res?.resendsRemaining === 'number' ? ` (${res.resendsRemaining} resend${res.resendsRemaining === 1 ? '' : 's'} left)` : '';
       setInfo(`A new code is on its way${left}.`);
@@ -360,7 +386,6 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
       if (e instanceof ApiError) {
         if (e.status === 423 || e.body?.locked) setLocked(true);
         else if (e.status === 429 && typeof e.body?.cooldownSeconds === 'number') setCooldown(e.body.cooldownSeconds as number);
-        else if (e.body?.exhausted && codeMode === 'signup') { setPhase('new'); setGuid(''); setCode(''); }
       }
       setErr(errMsg(e, 'Could not resend the code.'));
     }
@@ -368,8 +393,8 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
 
   const accountRow = (
     <div style={acctStyle}>
-      <span style={{ wordBreak: 'break-all' }}>{email}</span>
-      <button type="button" className={styles.linkBtn} onClick={useDifferentEmail} style={{ whiteSpace: 'nowrap' }}>Use a different email</button>
+      <span style={acctAddrStyle} title={email}>{email}</span>
+      <button type="button" className={styles.linkBtn} onClick={useDifferentEmail} style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', textDecoration: 'underline' }}>Use a different email</button>
     </div>
   );
 
@@ -411,7 +436,11 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
                   </div>
                 )}
                 <button type="submit" className={styles.submit} disabled={busy}>{busy ? 'Checking…' : 'Continue'}</button>
-                <p style={{ ...subStyle, margin: '16px 0 0', fontSize: 12.5 }}>No account yet? We&rsquo;ll set one up for you.</p>
+                {/* Door standard §5: 6.4px under the submit button, which carries no
+                    margin of its own — so this one value is the whole gap. At the old
+                    16px it read as a footnote below the form rather than as a line
+                    belonging to the button. Its size is not standardised, only the gap. */}
+                <p style={{ ...subStyle, margin: '6.4px 0 0', fontSize: '0.84rem' }}>No account yet? We&rsquo;ll set one up for you.</p>
               </form>
             )}
 
@@ -538,7 +567,7 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
               </form>
             )}
 
-            {/* ── OTP verification (new-account signup code or login 2FA) ── */}
+            {/* ── Login 2FA — the only emailed code left in this door ── */}
             {phase === 'code' && (
               <form onSubmit={submitCode}>
                 <h1 style={hStyle}>Check your email</h1>
@@ -548,14 +577,14 @@ export function SignInForm(_props: { initialMode?: 'signin' | 'signup' } = {}) {
                   <input id="code" inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} />
                 </div>
                 <button type="submit" className={styles.submit} disabled={busy || locked || code.length !== 6}>
-                  {busy ? 'Verifying…' : codeMode === 'login' ? 'Verify & sign in' : 'Verify & create account'}
+                  {busy ? 'Verifying…' : 'Verify & sign in'}
                 </button>
                 <div className={styles.codeActions}>
                   <button type="button" className={styles.linkBtn} onClick={resend} disabled={cooldown > 0 || locked}>
                     {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
                   </button>
-                  <button type="button" className={styles.linkBtn} onClick={() => { setPhase(codeMode === 'login' ? 'welcome' : 'new'); setCode(''); setErr(null); setInfo(null); setLocked(false); }}>
-                    {codeMode === 'login' ? 'Use a different account' : 'Edit details'}
+                  <button type="button" className={styles.linkBtn} onClick={() => { setPhase('welcome'); setCode(''); setErr(null); setInfo(null); setLocked(false); }}>
+                    Use a different account
                   </button>
                 </div>
               </form>

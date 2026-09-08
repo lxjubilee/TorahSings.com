@@ -162,6 +162,31 @@ function noteRow(text) {
 // ---------------------------------------------------------------------------
 // Auth emails
 // ---------------------------------------------------------------------------
+// The address-confirmation code a member asks for from their own /account page.
+//
+// NOT the old sign-up code. That one stood between a person and an account they
+// did not have yet; this goes to somebody already signed in, about an address
+// already on their account, and nothing is gated on the answer. The copy has to
+// carry that difference or it reads as a wall — hence no urgency and an explicit
+// line saying the account works either way.
+export async function sendEmailVerificationCode({ to, code }) {
+  const subject = 'Your TorahSings.com confirmation code';
+  const text =
+    `Your TorahSings.com confirmation code is: ${code}\n\n` +
+    `Enter it on your account page to confirm this address. This code expires in 10 minutes.\n\n` +
+    `If you didn't ask for this, you can ignore this email — your account is unchanged and keeps working either way.\n\n` +
+    `— TorahSings.com`;
+  const html = emailShell(
+    `Your confirmation code is ${code} — expires in 10 minutes.`,
+    headingRow('Confirm your email address') +
+    introRow('Enter the code below on your account page to confirm that TorahSings.com has the right address for you.') +
+    codeRow(code) +
+    expiryRow('This code expires in 10 minutes.') +
+    noteRow("Didn't ask for this? You can safely ignore this email — your account is unchanged and keeps working either way.")
+  );
+  await send({ to, subject, text, html });
+}
+
 export async function sendLoginVerificationEmail({ to, code }) {
   const subject = 'Your TorahSings.com sign-in code';
   const text =

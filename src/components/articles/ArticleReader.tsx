@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { MembershipGate } from '@/components/gating/MembershipGate';
 import { ArticleBody } from '@/components/reading/ArticleBody';
 import { ReadAloudButton } from '@/components/reading/ReadAloudButton';
-import { CelestialArt } from '@/components/system/CelestialArt';
+import { ArticleArt } from '@/components/system/ArticleArt';
 import { Eyebrow } from '@/components/system/Eyebrow';
 import { canReadArticle } from '@/lib/access';
 import { useJubileeAccount } from '@/lib/jubilee-account';
@@ -33,9 +33,9 @@ export function ArticleReader({ article }: { article: Article }) {
           <p className={styles.dek}>{article.dek}</p>
         </header>
 
-        <CelestialArt
+        <ArticleArt
           className={styles.art}
-          seed={article.slug}
+          slug={article.slug}
           hue={article.art.hue}
           topic={article.category}
           glyph={article.art.glyph}

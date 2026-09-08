@@ -40,6 +40,7 @@ import authRouter from './routes/auth.js';
 // AWS SDK; active-listeners/subscribers need the analytics/subscription tables.
 import adminRouter from './routes/admin.js';
 import meRouter from './routes/me.js';
+import emailVerificationRouter from './routes/emailVerification.js';
 import reviewsRouter from './routes/reviews.js';
 import serviceRouter from './routes/service.js';
 import serviceTokenRouter from './routes/serviceToken.js';
@@ -119,7 +120,7 @@ app.get('/api/openapi.json', (req, res) => {
 app.use('/api/auth/service', serviceLimiter, serviceTokenRouter);
 app.use('/api/auth/admin', serviceLimiter, serviceRouter);
 
-// Public auth surface: signup / verify-signup / signin / verify-login /
+// Public auth surface: signup / signin / verify-login /
 // forgot-password / reset-password / change-password / refresh / me / logout.
 app.use('/api/auth', authLimiter, authRouter);
 
@@ -140,6 +141,8 @@ app.use('/api/reviews', writeLimiter, reviewsRouter);
 // requireAuth. The GET /likes list resolves titles via the (empty) manifest, so
 // the web resolves liked uuids against its own catalog instead.
 app.use('/api/me', writeLimiter, meRouter);
+// Proving the address on your own account. Authed inside the router.
+app.use('/api/account/email-verification', writeLimiter, emailVerificationRouter);
 // Audio track admin (production.cover_updates). NOTE: the raw-body upload needs
 // R2 credentials configured; without them the upload route fails closed (503).
 app.use('/api/admin/tracks', writeLimiter, tracksRouter);

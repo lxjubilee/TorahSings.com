@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { CelestialArt } from '@/components/system/CelestialArt';
+import { ArticleArt } from '@/components/system/ArticleArt';
 import { Eyebrow } from '@/components/system/Eyebrow';
 import type { Article } from '@/lib/types';
 import styles from './ArticleCard.module.css';
@@ -18,9 +18,9 @@ export function ArticleCard({ article, featured = false, locked = false }: Artic
       href={`/hebraic-christianity/${article.slug}`}
       className={[styles.card, featured ? styles.featured : ''].filter(Boolean).join(' ')}
     >
-      <CelestialArt
+      <ArticleArt
         className={styles.art}
-        seed={article.slug}
+        slug={article.slug}
         hue={article.art.hue}
         topic={article.category}
         glyph={article.art.glyph}

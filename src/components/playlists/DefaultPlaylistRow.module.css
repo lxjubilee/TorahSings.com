@@ -1,0 +1,147 @@
+/* A single default-playlist browse row (Section 4): thumb · title · one-line
+   description · play. Deliberately short and to the point. */
+
+.row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.row:hover {
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--bg-card);
+  flex: none;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumb svg {
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.body {
+  min-width: 0;
+}
+
+.titleLine {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.verse {
+  flex: none;
+  font-family: var(--font-mono), monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* One line, truncates past the edge of the row. */
+.desc {
+  margin: 3px 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-muted);
+}
+
+.descText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-body);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.edit:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.play {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent-rose);
+  color: #fff;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.play:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: scale(1.05);
+}
+
+.play:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.play svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 560px) {
+  .verse {
+    display: none;
+  }
+}

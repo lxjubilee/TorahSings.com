@@ -13,7 +13,15 @@
     "verify": "node scripts/verify-content.mjs",
     "check": "npm run typecheck && npm run verify && npm run build",
     "catalog": "node scripts/build-angels-catalog.mjs",
+    "playlists:seed": "node scripts/seed-default-playlists.mjs",
+    "playlists": "node scripts/build-default-playlists.mjs",
+    "hebraic": "node scripts/build-hebraic-articles.mjs",
+    "learn-hebrew": "node scripts/build-learn-hebrew-articles.mjs",
+    "learn-hebrew:wire": "node scripts/wire-learn-hebrew-images.mjs",
     "audio:placeholder": "node scripts/generate-placeholder-audio.mjs",
+    "images:wire": "node scripts/wire-article-images.mjs",
+    "images:deploy": "rclone copy \"J:/torahsings.com/articles/hebraic/images\" jubilee-r2:jubileeverse-cdn/torahsings/articles/hebraic/images --transfers=8 --checksum",
+    "music:deploy": "rclone copy \"J:/torahsings.com/music\" jubilee-r2:jubileeverse-cdn/torahsings --transfers=8 --checksum --exclude \"**/blueprints/**\" --exclude \"**/proof/**\"",
     "status": "node scripts/status.mjs"
   },
   "dependencies": {

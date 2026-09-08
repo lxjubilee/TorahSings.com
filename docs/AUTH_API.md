@@ -11,7 +11,7 @@ service (`torahsings-api`), a replica of the Jubilujah identity API backed by th
 > ✅ **Status (verified 2026-07-16): DEPLOYED AND LIVE on `https://api.torahsings.com`.**
 > This supersedes the earlier "not deployed yet (awaiting go-ahead)" note, which was stale.
 > Confirmed by read-only probes: `GET /api/auth/me` → `200 {"authenticated":false}`, and
-> `signup` · `verify-signup` · `send-signup-verification` · `signin` · `forgot-password` ·
+> `signup` · `signin` · `forgot-password` ·
 > `refresh` all answer with the documented validation contract (`400` + `issues[]`). The
 > `50 req / 15 min / IP` limiter is active — responses carry `Ratelimit-Policy: 50;w=900`.
 >
@@ -20,14 +20,13 @@ service (`torahsings-api`), a replica of the Jubilujah identity API backed by th
 > surface. The identical endpoints also remain live on `https://api.jubilujah.com`.
 >
 > ⚠️ **Because it is live, `NEXT_PUBLIC_API_BASE=https://api.torahsings.com` means dev
-> writes to production** — a sign-up from localhost creates a real pending row and sends a
-> real email. Use the local server below unless you mean to hit prod.
+> writes to production** — a sign-up from localhost creates a real account immediately.
+> Use the local server below unless you mean to hit prod.
 
 > 🧪 **Local, no-Postgres dev:** `npm run dev:auth` starts `scripts/local-auth-server.mjs`
-> on **`http://localhost:4031`** — the full sign-up flow (request code → verify → account
-> created → signed in) against a SQLite file (`.local-auth.db`, gitignored), with the
-> 6-digit code **printed to that console** instead of emailed. It imports the real scrypt
-> KDF from `api/src/auth/password.js` and mirrors `api/src/auth/token.js`'s exact token
+> on **`http://localhost:4031`** — the full sign-up flow (one call → account created →
+> signed in) against a SQLite file (`.local-auth.db`, gitignored). It imports the real
+> scrypt KDF from `api/src/auth/password.js` and mirrors `api/src/auth/token.js`'s exact token
 > format, and its contracts were checked byte-for-byte against the live endpoints. Point
 > the web at it with `NEXT_PUBLIC_API_BASE=http://localhost:4031` in `.env.local`.
 > Dev-only: no rate limiting, no 2FA/Turnstile, no JI delegation, no password reset.
@@ -63,48 +62,43 @@ Every successful login path returns a **token pair**:
 
 ## 1. Sign up
 
-Two-phase and **email-verified** — no account exists until the 6-digit code is confirmed.
+**One call.** Signing up no longer proves the address: the account is created, the
+Jubilee ID is provisioned at the shared authority, and tokens come back — nothing is
+emailed and nothing waits on a code.
 
-### 1.1 `POST /api/auth/signup` — request the code
+> **Changed — breaking.** `POST /api/auth/verify-signup` and
+> `POST /api/auth/send-signup-verification` **have been removed**, and `/signup` no
+> longer answers `200 { requiresVerification, verificationGuid }`. This follows
+> JubileeInspire's Jubilee ID door, which dropped the sign-up OTP first. The **login**
+> OTP (§2) is unchanged.
+
+### 1.1 `POST /api/auth/signup` — create the account and sign in
 
 | Field | Type | Rules |
 |---|---|---|
 | `name` | string | 1–120 chars |
 | `email` | string | valid email, ≤254, stored lowercase |
 | `password` | string | 8–200 chars |
+| `rememberMe` | boolean | optional → 1-year refresh |
 
 ```json
 { "name": "Ada Lovelace", "email": "ada@example.com", "password": "correct horse battery" }
 ```
 
-**200 OK** — emails a 6-digit code; **no account yet**. Keep `verificationGuid` for phase 2.
-```json
-{ "success": true, "requiresVerification": true, "email": "ada@example.com",
-  "verificationGuid": "3f1c2b9e-5d4a-4c8e-9b1a-0f2e3d4c5b6a" }
-```
-- `409` — an active account already exists → "Please sign in."
-- `400` — validation failed (`issues[]`).
-- Code expires in **30 min**; **5** wrong attempts per code.
-
-### 1.2 `POST /api/auth/verify-signup` — confirm code, create account
-
-| Field | Type | Rules |
-|---|---|---|
-| `verificationGuid` | string (UUID) | from `/signup` |
-| `verificationCode` | string | exactly 6 digits |
-| `rememberMe` | boolean | optional → 1-year refresh |
-
 **201 Created** — account created **and logged in**:
 ```json
-{ "user": { "id": "…", "email": "ada@example.com", "displayName": "Ada Lovelace" },
+{ "success": true,
+  "user": { "id": "…", "email": "ada@example.com", "displayName": "Ada Lovelace" },
   "tokens": { "accessToken": "…", "refreshToken": "…", "expiresAt": "…" } }
 ```
-- `400` — wrong code (includes `attemptsRemaining`), expired, or already used.
-- `429` — too many attempts; start over. `409` — email claimed meanwhile.
+- `409` — an active account already exists here **or** at the Jubilee ID authority →
+  "Please sign in." (The same generic message either way — signup already reveals
+  existence, so this adds no enumeration surface.)
+- `400` — validation failed (`issues[]`).
 
-### 1.3 `POST /api/auth/send-signup-verification` — resend
-Body `{ "verificationGuid": "…" }` → `{ "success": true, "verificationGuid": "…", "resendsRemaining": 1 }`
-- `429` + `cooldownSeconds` — **60 s** between resends; cap **2 resends** (3 codes total).
+The address is **not** verified by this flow. `first_signin_completed` is set TRUE, as it
+was when the code proved it: in this API that column gates the **login** OTP, so leaving
+it FALSE would only move the emailed code to the next sign-in.
 
 ---
 
@@ -309,12 +303,9 @@ For a partner service deciding between `provision-user` (new) and `set-password`
 ```bash
 API=https://api.torahsings.com     # not live yet — use https://api.jubilujah.com to test
 
-# Sign up
+# Sign up — one call, returns 201 {user, tokens}
 curl -sX POST $API/api/auth/signup -H 'Content-Type: application/json' \
   -d '{"name":"Ada Lovelace","email":"ada@example.com","password":"correct horse battery"}'
-
-curl -sX POST $API/api/auth/verify-signup -H 'Content-Type: application/json' \
-  -d '{"verificationGuid":"GUID","verificationCode":"048213"}'      # -> 201 {user, tokens}
 
 # Sign in
 TOKENS=$(curl -sX POST $API/api/auth/signin -H 'Content-Type: application/json' \

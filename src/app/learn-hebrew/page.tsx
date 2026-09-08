@@ -1,10 +1,7 @@
 import type { Metadata } from 'next';
 
-import { AlephBetTeaser } from '@/components/lessons/AlephBetTeaser';
-import { LessonList } from '@/components/lessons/LessonList';
-import { Eyebrow } from '@/components/system/Eyebrow';
-import { PageHero } from '@/components/system/PageHero';
-import { getLessonAlbums } from '@/lib/content';
+import { LearnHebrewCard } from '@/components/backstage/LearnHebrewCard';
+import { getLearnHebrewArticles } from '@/lib/learn-hebrew';
 import styles from './page.module.css';
 
 export const revalidate = 3600;
@@ -12,30 +9,19 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: 'Learn Hebrew',
   description:
-    'You do not need fluency. Just enough literacy to begin discovering for yourself. Taught by Zev and Zariah Inspire, from the Paleo layer up.',
+    'One Hebrew word at a time — the story behind it, what it really means, the ancient picture-letters that built it, and the living traditions around it today. Taught by Zev Inspire.',
 };
 
 export default function LearnHebrewPage() {
-  const lessonAlbums = getLessonAlbums();
+  const articles = getLearnHebrewArticles();
 
   return (
-    <>
-      <PageHero eyebrow="Prong III · The empowerment" title="Learn Hebrew">
-        You do not need fluency. You need enough to open the text yourself and see what is standing in it — the
-        picture inside the letter, the root under the word. Start where everyone starts. It is genuinely fun, and
-        it goes further than you expect.
-      </PageHero>
-
-      <div className={`wrap ${styles.page}`}>
-        <div>
-          <AlephBetTeaser />
-        </div>
-
-        <div className={styles.right}>
-          <Eyebrow className={styles.rightHead}>Three levels</Eyebrow>
-          <LessonList lessonAlbums={lessonAlbums} />
-        </div>
+    <div className={`bsHebraic ${styles.page}`}>
+      <div className={styles.grid}>
+        {articles.map((article) => (
+          <LearnHebrewCard key={article.slug} article={article} />
+        ))}
       </div>
-    </>
+    </div>
   );
 }
